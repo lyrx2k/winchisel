@@ -8,13 +8,13 @@ changing Windows settings without digging through multiple control panels.
 
 - Home dashboard with system information
 - Debloater tools for removing Windows components and apps
-- Downloads tab for installing useful apps and tools
+- Downloads tab for installing useful apps and tools (via winget or vendor sites)
 - Performance tab with gaming and system tweaks
 - Processes tab for process management, priorities, affinity, and related actions
 - Latency tab for USB latency analysis and device topology inspection
 - Settings tab for app behavior and system protection options
 - Automatic admin launch for system-level tweaks
-- Update checking through GitHub Releases
+- Auto-updater via GitHub Releases
 - Restore point support before risky actions
 
 ## How To Use
@@ -26,7 +26,7 @@ changing Windows settings without digging through multiple control panels.
 |-----|---------|
 | **Home** | System overview |
 | **Debloater** | Remove bloatware — use 🛡️ *Recommended* for safe defaults |
-| **Downloads** | Install useful tools |
+| **Downloads** | Install tools (fetches from winget or vendor sites) |
 | **Performance** | Gaming/system tweaks |
 | **Processes** | Manage priorities and affinity |
 | **Latency** | USB latency analysis |
@@ -47,6 +47,7 @@ Get the latest release here:
 - Some settings depend on the Windows build or system configuration.
 - A restore point may be created before risky operations where supported.
 - The app stores its own settings in `%APPDATA%\Winchisel\settings.json`.
+- **Network usage**: Auto-updater and Downloads tab require internet access.
 
 ## Configuration
 
