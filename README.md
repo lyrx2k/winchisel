@@ -30,7 +30,7 @@ changing Windows settings without digging through multiple control panels.
 
 Get the latest release here:
 
-[![Download CoreScribe](https://img.shields.io/badge/Download-Latest%20Release-brightgreen?style=for-the-badge&logo=windows)](https://github.com/lyrx2k/winchisel/releases/latest)
+[![Download Winchisel](https://img.shields.io/badge/Download-Latest%20Release-brightgreen?style=for-the-badge&logo=windows)](https://github.com/lyrx2k/winchisel/releases/latest)
 
 ## Important Notes
 
