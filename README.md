@@ -4,7 +4,7 @@ Winchisel is a fast, native Windows tweaking app built in Rust with `egui`/`efra
 It focuses on practical system tweaks, cleaner defaults, and a compact UI for quickly
 changing Windows settings without digging through multiple control panels.
 
-## What It Does
+## Features
 
 - Home dashboard with system information
 - Debloater tools for removing Windows components and apps
@@ -63,22 +63,13 @@ Available app settings:
 
 ## Project Structure
 
-- `src/main.rs` - app bootstrap, admin launch, settings loading, window setup
-- `src/app.rs` - app orchestration and shared state
-- `src/app/home.rs` - home tab
-- `src/app/debloater.rs` - debloater tab
-- `src/app/downloads.rs` - downloads tab
-- `src/app/performance.rs` - performance tab
-- `src/app/processes.rs` - processes tab
-- `src/app/latency.rs` - latency tab
-- `src/app/settings.rs` - settings tab
-- `src/app/update.rs` - update dialog and update flow
-- `src/app/restore_point.rs` - restore point handling
-- `src/app/system_info.rs` - system information collection
-- `src/app/ui_shell.rs` - shared UI layout helpers
-- `src/performance.rs` - performance tweak catalog and tweak logic
-- `src/latency.rs` - latency analysis core
-- `src/updater.rs` - update checking
+| Module | Purpose |
+|--------|---------|
+| `main.rs` | Bootstrap, admin elevation, settings |
+| `app/` | UI tabs (home, debloater, performance, processes, latency, settings) |
+| `performance.rs` | Tweak registry/catalog |
+| `latency.rs` | USB device topology analysis |
+| `updater.rs` | GitHub Releases integration |
 
 ## Contributing
 
