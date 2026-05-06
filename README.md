@@ -19,12 +19,20 @@ changing Windows settings without digging through multiple control panels.
 
 ## How To Use
 
-1. Start Winchisel
-2. Let it relaunch as Administrator if Windows asks for permission
-3. Pick the tab you need from the sidebar
-4. Use the recommended/default buttons when you want one-click safe changes
-5. Use the individual switches and selectors for manual control
-6. Check the Settings tab if you want to show the console or control update checks
+1. Run `Winchisel.exe` and grant Administrator rights (required)
+2. Select a tab from the sidebar:
+
+| Tab | Purpose |
+|-----|---------|
+| **Home** | System overview |
+| **Debloater** | Remove bloatware — use 🛡️ *Recommended* for safe defaults |
+| **Downloads** | Install useful tools |
+| **Performance** | Gaming/system tweaks |
+| **Processes** | Manage priorities and affinity |
+| **Latency** | USB latency analysis |
+| **Settings** | App preferences, console, updates |
+
+> 🛡️ *Recommended* buttons = safe, tested defaults. Manual toggles = full control, may need restart.
 
 ## Download
 
