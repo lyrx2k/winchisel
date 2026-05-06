@@ -95,7 +95,7 @@ impl WinchiselApp {
                         }
                         UpdateDialog::UpdateAvailable { latest_version } => {
                             ui.label(format!("A newer version is available: {}", latest_version));
-                            ui.label("Open the release page to download the update.");
+                            ui.label("Download and restart the app to install it.");
                         }
                         UpdateDialog::Error { message } => {
                             ui.colored_label(
@@ -109,6 +109,19 @@ impl WinchiselApp {
                     ui.horizontal(|ui| {
                         if ui.button("Close").clicked() {
                             self.pending_update_dialog = None;
+                        }
+                        if matches!(dialog, UpdateDialog::UpdateAvailable { .. })
+                            && ui.button("Download & Restart").clicked()
+                        {
+                            if let UpdateDialog::UpdateAvailable { latest_version } = dialog.clone()
+                            {
+                                self.pending_update_dialog = None;
+                                if let Err(e) = updater::download_and_install(&latest_version) {
+                                    self.pending_update_dialog = Some(UpdateDialog::Error {
+                                        message: e,
+                                    });
+                                }
+                            }
                         }
                         if matches!(dialog, UpdateDialog::UpdateAvailable { .. })
                             && ui.button("Check Again").clicked()

@@ -1,3 +1,5 @@
+use std::fs;
+
 const REPO: &str = "lyrx2k/Winchisel";
 
 pub fn check_for_update() -> Result<Option<String>, String> {
@@ -22,6 +24,60 @@ pub fn check_for_update() -> Result<Option<String>, String> {
     } else {
         Ok(None)
     }
+}
+
+pub fn download_and_install(tag: &str) -> Result<(), String> {
+    let url = format!(
+        "https://github.com/{}/releases/download/{}/Winchisel.exe",
+        REPO, tag
+    );
+
+    let mut response = ureq::get(&url)
+        .header("User-Agent", "Winchisel-Updater")
+        .call()
+        .map_err(|e| format!("Failed to download update: {}", e))?;
+
+    let temp_dir = std::env::temp_dir();
+    let update_exe = temp_dir.join("Winchisel_update.exe");
+
+    let mut file = fs::File::create(&update_exe)
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+
+    let bytes = std::io::copy(&mut response.body_mut().as_reader(), &mut file)
+        .map_err(|e| format!("Failed to write update file: {}", e))?;
+    drop(file);
+
+    if bytes < 100_000 {
+        return Err(format!("Downloaded file is too small ({} bytes)", bytes));
+    }
+
+    let current_exe = std::env::current_exe()
+        .map_err(|e| format!("Failed to resolve current executable: {}", e))?;
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let bat = format!(
+            "@echo off\r\nping -n 3 127.0.0.1 > nul\r\nmove /y \"{}\" \"{}\"\r\nstart \"\" \"{}\"\r\ndel \"%~f0\"\r\n",
+            update_exe.display(),
+            current_exe.display(),
+            current_exe.display()
+        );
+
+        let bat_path = temp_dir.join("Winchisel_update.bat");
+        fs::write(&bat_path, bat.as_bytes())
+            .map_err(|e| format!("Failed to write update script: {}", e))?;
+
+        std::process::Command::new("cmd")
+            .args(["/c", bat_path.to_string_lossy().as_ref()])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("Failed to launch updater: {}", e))?;
+    }
+
+    std::process::exit(0);
 }
 
 fn is_newer(current: &str, latest: &str) -> bool {
