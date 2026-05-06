@@ -87,18 +87,19 @@ In plain language:
 - ✅ Free to use for everyone — individuals, businesses, IT professionals
 - ✅ Use it to service and consult for clients
 - ✅ Modify for your own internal use
-- ❌ Fork, rebrand, and redistribute as a competing product
+- ✅ Fork and modify under AGPL-3.0 terms (must remain open source)
 - ❌ Remove or circumvent license/copyright notices
+- ❌ Rebrand redistributed versions as "Winchisel"
 
-### Additional Terms
+### Community Guidelines
 
-The AGPL-3.0 grants you the right to fork and modify. However, we respectfully ask that you:
+We respectfully ask contributors and forkers:
 
-1. **Do not rebrand** — The name "Winchisel" and associated branding are reserved
-2. **Do not compete** — If you build upon this project, contribute back rather than launching a competing product
-3. **Respect the spirit** — This tool exists to help users, not to spawn proprietary clones
+1. **Consider upstream contributions** — Pull requests help everyone
+2. **Use distinct branding** for public forks — "Winchisel" is reserved
+3. **Credit original work** — Link back to this repository
 
-Violations of these terms may result in loss of community support and trademark enforcement.
+These are social expectations, not legal requirements. The AGPL-3.0 governs all rights and obligations.
 
 ### Trademark
 
