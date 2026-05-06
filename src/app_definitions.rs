@@ -1,3 +1,23 @@
+use crate::{Language, i18n::t};
+use std::sync::{LazyLock, Mutex};
+
+static CURRENT_LANGUAGE: LazyLock<Mutex<Language>> =
+    LazyLock::new(|| Mutex::new(Language::English));
+
+fn set_language(lang: Language) {
+    if let Ok(mut current) = CURRENT_LANGUAGE.lock() {
+        *current = lang;
+    }
+}
+
+pub(crate) fn current_language() -> Language {
+    CURRENT_LANGUAGE
+        .lock()
+        .ok()
+        .map(|g| *g)
+        .unwrap_or(Language::English)
+}
+
 #[derive(Clone, Debug)]
 pub struct AppItem {
     pub name: String,
@@ -21,7 +41,8 @@ pub enum AppCategory {
     OptionalFeatures,
 }
 
-pub fn get_all_apps() -> Vec<AppItem> {
+pub fn get_all_apps(lang: Language) -> Vec<AppItem> {
+    set_language(lang);
     let mut apps = Vec::new();
     apps.extend(get_windows_apps());
     apps.extend(get_capabilities());
@@ -49,14 +70,26 @@ fn app_item(
         .iter()
         .map(|s| s.to_ascii_lowercase())
         .collect();
+    let lang = current_language();
+    let name_value = name;
+    let description_value = t(lang, _id);
+    let group_value = t(lang, group);
     AppItem {
-        name: name.to_string(),
-        name_lc: name.to_ascii_lowercase(),
-        description: description.to_string(),
-        description_lc: description.to_ascii_lowercase(),
+        name: name_value.to_string(),
+        name_lc: name_value.to_ascii_lowercase(),
+        description: description_value.to_string(),
+        description_lc: format!(
+            "{} {}",
+            description.to_ascii_lowercase(),
+            description_value.to_ascii_lowercase()
+        ),
         category,
-        group: group.to_string(),
-        group_lc: group.to_ascii_lowercase(),
+        group: group_value.to_string(),
+        group_lc: format!(
+            "{} {}",
+            group_value.to_ascii_lowercase(),
+            group_value.to_ascii_lowercase()
+        ),
         package_name: package_name.to_string(),
         package_name_lc: package_name.to_ascii_lowercase(),
         package_names,
@@ -70,7 +103,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-3d-viewer",
             "3D Viewer",
-            "View 3D models and animations",
+            "windows-app-3d-viewer",
             AppCategory::WindowsApps,
             "3D/Mixed Reality",
             "Microsoft.Microsoft3DViewer",
@@ -84,7 +117,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-mixed-reality-portal",
             "Mixed Reality Portal",
-            "Portal for Windows Mixed Reality experiences",
+            "windows-app-mixed-reality-portal",
             AppCategory::WindowsApps,
             "3D/Mixed Reality",
             "Microsoft.MixedReality.Portal",
@@ -98,7 +131,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-bing-search",
             "Bing Search",
-            "Bing search integration for Windows",
+            "windows-app-bing-search",
             AppCategory::WindowsApps,
             "Bing/Search",
             "Microsoft.BingSearch",
@@ -112,7 +145,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-microsoft-news",
             "Microsoft News",
-            "Microsoft News app",
+            "windows-app-microsoft-news",
             AppCategory::WindowsApps,
             "Bing/Search",
             "Microsoft.BingNews",
@@ -126,7 +159,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-msn-weather",
             "MSN Weather",
-            "Weather forecasts and information",
+            "windows-app-msn-weather",
             AppCategory::WindowsApps,
             "Bing/Search",
             "Microsoft.BingWeather",
@@ -140,7 +173,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-camera",
             "Camera",
-            "Windows Camera app",
+            "windows-app-camera",
             AppCategory::WindowsApps,
             "Camera/Media",
             "Microsoft.WindowsCamera",
@@ -154,7 +187,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-clipchamp",
             "Clipchamp",
-            "Video editor app",
+            "windows-app-clipchamp",
             AppCategory::WindowsApps,
             "Camera/Media",
             "Clipchamp.Clipchamp",
@@ -168,7 +201,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-alarms-clock",
             "Alarms & Clock",
-            "Clock, alarms, timer, and stopwatch app",
+            "windows-app-alarms-clock",
             AppCategory::WindowsApps,
             "System Utilities",
             "Microsoft.WindowsAlarms",
@@ -182,7 +215,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-cortana",
             "Cortana",
-            "Microsoft's virtual assistant",
+            "windows-app-cortana",
             AppCategory::WindowsApps,
             "System Utilities",
             "Microsoft.549981C3F5F10",
@@ -196,7 +229,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-get-help",
             "Get Help",
-            "Microsoft support app",
+            "windows-app-get-help",
             AppCategory::WindowsApps,
             "System Utilities",
             "Microsoft.GetHelp",
@@ -210,7 +243,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-calculator",
             "Calculator",
-            "Calculator app with standard, scientific, and programmer modes",
+            "windows-app-calculator",
             AppCategory::WindowsApps,
             "System Utilities",
             "Microsoft.WindowsCalculator",
@@ -224,7 +257,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-dev-home",
             "Dev Home",
-            "Development environment for Windows",
+            "windows-app-dev-home",
             AppCategory::WindowsApps,
             "Development",
             "Microsoft.Windows.DevHome",
@@ -238,7 +271,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-family-safety",
             "Microsoft Family Safety",
-            "Family safety and screen time management",
+            "windows-app-family-safety",
             AppCategory::WindowsApps,
             "Communication",
             "MicrosoftCorporationII.MicrosoftFamily",
@@ -252,7 +285,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-mail-calendar",
             "Mail and Calendar",
-            "Microsoft Mail and Calendar apps",
+            "windows-app-mail-calendar",
             AppCategory::WindowsApps,
             "Communication",
             "microsoft.windowscommunicationsapps",
@@ -266,7 +299,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-skype",
             "Skype",
-            "Video calling and messaging app",
+            "windows-app-skype",
             AppCategory::WindowsApps,
             "Communication",
             "Microsoft.SkypeApp",
@@ -280,7 +313,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-teams",
             "Microsoft Teams",
-            "Team collaboration and communication app",
+            "windows-app-teams",
             AppCategory::WindowsApps,
             "Communication",
             "MSTeams",
@@ -294,7 +327,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-feedback-hub",
             "Feedback Hub",
-            "App for sending feedback to Microsoft",
+            "windows-app-feedback-hub",
             AppCategory::WindowsApps,
             "System Tools",
             "Microsoft.WindowsFeedbackHub",
@@ -308,7 +341,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-maps",
             "Maps",
-            "Microsoft Maps app",
+            "windows-app-maps",
             AppCategory::WindowsApps,
             "System Tools",
             "Microsoft.WindowsMaps",
@@ -322,7 +355,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-terminal",
             "Terminal",
-            "Modern terminal application for Windows",
+            "windows-app-terminal",
             AppCategory::WindowsApps,
             "System Tools",
             "Microsoft.WindowsTerminal",
@@ -336,7 +369,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-office-hub",
             "MS 365 Copilot (Office Hub)",
-            "Microsoft 365 Copilot (formerly known as Office hub)",
+            "windows-app-office-hub",
             AppCategory::WindowsApps,
             "Office",
             "Microsoft.MicrosoftOfficeHub",
@@ -350,7 +383,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-outlook",
             "Outlook for Windows",
-            "Reimagined Outlook app for Windows",
+            "windows-app-outlook",
             AppCategory::WindowsApps,
             "Office",
             "Microsoft.OutlookForWindows",
@@ -364,7 +397,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-paint-3d",
             "Paint 3D",
-            "3D modeling and editing app",
+            "windows-app-paint-3d",
             AppCategory::WindowsApps,
             "Graphics",
             "Microsoft.MSPaint",
@@ -378,7 +411,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-paint",
             "Paint",
-            "Traditional image editing app",
+            "windows-app-paint",
             AppCategory::WindowsApps,
             "Graphics",
             "Microsoft.Paint",
@@ -392,7 +425,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-photos",
             "Photos",
-            "Photo viewing and editing app",
+            "windows-app-photos",
             AppCategory::WindowsApps,
             "Graphics",
             "Microsoft.Windows.Photos",
@@ -406,7 +439,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-snipping-tool",
             "Snipping Tool",
-            "Screen capture and annotation tool",
+            "windows-app-snipping-tool",
             AppCategory::WindowsApps,
             "Graphics",
             "Microsoft.ScreenSketch",
@@ -420,7 +453,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-people",
             "People",
-            "Contact management app",
+            "windows-app-people",
             AppCategory::WindowsApps,
             "Social",
             "Microsoft.People",
@@ -434,7 +467,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-power-automate",
             "Power Automate",
-            "Desktop automation tool",
+            "windows-app-power-automate",
             AppCategory::WindowsApps,
             "Automation",
             "Microsoft.PowerAutomateDesktop",
@@ -448,7 +481,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-quick-assist",
             "Quick Assist",
-            "Remote assistance tool",
+            "windows-app-quick-assist",
             AppCategory::WindowsApps,
             "Support",
             "MicrosoftCorporationII.QuickAssist",
@@ -462,7 +495,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-solitaire",
             "Solitaire Collection",
-            "Microsoft Solitaire Collection games",
+            "windows-app-solitaire",
             AppCategory::WindowsApps,
             "Games",
             "Microsoft.MicrosoftSolitaireCollection",
@@ -476,7 +509,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-xbox",
             "Xbox",
-            "Xbox App for Windows",
+            "windows-app-xbox",
             AppCategory::WindowsApps,
             "Games",
             "Microsoft.GamingApp",
@@ -490,7 +523,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-xbox-identity-provider",
             "Xbox Identity Provider",
-            "Authentication service for Xbox Live and related Microsoft gaming services",
+            "windows-app-xbox-identity-provider",
             AppCategory::WindowsApps,
             "Games",
             "Microsoft.XboxIdentityProvider",
@@ -504,7 +537,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-xbox-game-bar-plugin",
             "Xbox Game Bar Plugin",
-            "Extension component for Xbox Game Bar providing additional functionality",
+            "windows-app-xbox-game-bar-plugin",
             AppCategory::WindowsApps,
             "Games",
             "Microsoft.XboxGameOverlay",
@@ -518,7 +551,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-xbox-live-ingame",
             "Xbox Live In-Game Experience",
-            "Core component for Xbox Live services within games",
+            "windows-app-xbox-live-ingame",
             AppCategory::WindowsApps,
             "Games",
             "Microsoft.Xbox.TCUI",
@@ -532,7 +565,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-xbox-game-bar",
             "Xbox Game Bar",
-            "Gaming overlay with screen capture, performance monitoring, and social features",
+            "windows-app-xbox-game-bar",
             AppCategory::WindowsApps,
             "Games",
             "Microsoft.XboxGamingOverlay",
@@ -546,7 +579,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-store",
             "Microsoft Store",
-            "App store for Windows",
+            "windows-app-store",
             AppCategory::WindowsApps,
             "Store",
             "Microsoft.WindowsStore",
@@ -560,7 +593,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-media-player",
             "Media Player",
-            "Music player app",
+            "windows-app-media-player",
             AppCategory::WindowsApps,
             "Media",
             "Microsoft.ZuneMusic",
@@ -574,7 +607,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-movies-tv",
             "Movies & TV",
-            "Video player app",
+            "windows-app-movies-tv",
             AppCategory::WindowsApps,
             "Media",
             "Microsoft.ZuneVideo",
@@ -588,7 +621,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-sound-recorder",
             "Sound Recorder",
-            "Audio recording app",
+            "windows-app-sound-recorder",
             AppCategory::WindowsApps,
             "Media",
             "Microsoft.WindowsSoundRecorder",
@@ -602,7 +635,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-sticky-notes",
             "Sticky Notes",
-            "Note-taking app",
+            "windows-app-sticky-notes",
             AppCategory::WindowsApps,
             "Productivity",
             "Microsoft.MicrosoftStickyNotes",
@@ -616,7 +649,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-tips",
             "Tips",
-            "Windows tutorial app",
+            "windows-app-tips",
             AppCategory::WindowsApps,
             "Productivity",
             "Microsoft.Getstarted",
@@ -630,7 +663,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-todo",
             "To Do: Lists, Tasks & Reminders",
-            "Task management app",
+            "windows-app-todo",
             AppCategory::WindowsApps,
             "Productivity",
             "Microsoft.Todos",
@@ -644,7 +677,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-notepad",
             "Notepad",
-            "Text editing app",
+            "windows-app-notepad",
             AppCategory::WindowsApps,
             "Productivity",
             "Microsoft.WindowsNotepad",
@@ -658,7 +691,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-phone-link",
             "Phone Link",
-            "Connect your Android or iOS device to Windows",
+            "windows-app-phone-link",
             AppCategory::WindowsApps,
             "Phone",
             "Microsoft.YourPhone",
@@ -672,7 +705,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-copilot",
             "Copilot",
-            "AI assistant for Windows, includes Copilot provider and Store components",
+            "windows-app-copilot",
             AppCategory::WindowsApps,
             "AI",
             "Microsoft.Copilot",
@@ -690,7 +723,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-client-aix",
             "Windows AI Experience",
-            "Core Windows AI experience package (MicrosoftWindows.Client.AIX)",
+            "windows-app-client-aix",
             AppCategory::WindowsApps,
             "AI",
             "MicrosoftWindows.Client.AIX",
@@ -704,7 +737,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-client-copilot",
             "Windows Copilot Client",
-            "System Copilot client package (MicrosoftWindows.Client.CoPilot)",
+            "windows-app-client-copilot",
             AppCategory::WindowsApps,
             "AI",
             "MicrosoftWindows.Client.CoPilot",
@@ -718,7 +751,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-edge-game-assist",
             "Edge Game Assist",
-            "Edge Game Assist AI overlay for gaming",
+            "windows-app-edge-game-assist",
             AppCategory::WindowsApps,
             "AI",
             "Microsoft.Edge.GameAssist",
@@ -732,7 +765,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-office-actions-server",
             "Office Actions Server",
-            "Office AI Actions Server for automated AI-powered actions",
+            "windows-app-office-actions-server",
             AppCategory::WindowsApps,
             "AI",
             "Microsoft.Office.ActionsServer",
@@ -746,7 +779,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-ai-manager",
             "AI Manager",
-            "Office AI Manager (aimgr) for managing AI services",
+            "windows-app-ai-manager",
             AppCategory::WindowsApps,
             "AI",
             "aimgr",
@@ -760,7 +793,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-writing-assistant",
             "Writing Assistant",
-            "Microsoft Office Writing Assistant AI tool",
+            "windows-app-writing-assistant",
             AppCategory::WindowsApps,
             "AI",
             "Microsoft.WritingAssistant",
@@ -774,7 +807,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-ai-workloads",
             "AI Workload Packages",
-            "Windows AI workload packages including ONNX Runtime, Semantic Text, Image Search, Content Extraction, Screen Region Detection, Text Recognition, and Image Content Moderation",
+            "windows-app-ai-workloads",
             AppCategory::WindowsApps,
             "AI",
             "WindowsWorkload.OnnxRuntimeGenAI",
@@ -809,7 +842,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-copilot-plus-pc",
             "Copilot+ PC AI Packages",
-            "AI voice, speech, live typing, input, and file operation packages for NPU-equipped Copilot+ PCs",
+            "windows-app-copilot-plus-pc",
             AppCategory::WindowsApps,
             "AI",
             "MicrosoftWindows.Voiess",
@@ -829,7 +862,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-edge",
             "Microsoft Edge",
-            "Microsoft's web browser",
+            "windows-app-edge",
             AppCategory::WindowsApps,
             "Browsers",
             "Microsoft.MicrosoftEdge.Stable",
@@ -843,7 +876,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-onedrive",
             "OneDrive",
-            "Microsoft's cloud storage service",
+            "windows-app-onedrive",
             AppCategory::WindowsApps,
             "System",
             "Microsoft.OneDriveSync",
@@ -857,7 +890,7 @@ fn get_windows_apps() -> Vec<AppItem> {
         app_item(
             "windows-app-onenote",
             "OneNote",
-            "Microsoft note-taking app",
+            "windows-app-onenote",
             AppCategory::WindowsApps,
             "Office",
             "Microsoft.Office.OneNote",
@@ -876,7 +909,7 @@ fn get_capabilities() -> Vec<AppItem> {
         app_item(
             "capability-internet-explorer",
             "Internet Explorer",
-            "Legacy web browser",
+            "capability-internet-explorer",
             AppCategory::Capabilities,
             "Browser",
             "Browser.InternetExplorer",
@@ -890,7 +923,7 @@ fn get_capabilities() -> Vec<AppItem> {
         app_item(
             "capability-powershell-ise",
             "PowerShell ISE",
-            "PowerShell Integrated Scripting Environment",
+            "capability-powershell-ise",
             AppCategory::Capabilities,
             "Development",
             "Microsoft.Windows.PowerShell.ISE",
@@ -903,8 +936,8 @@ fn get_capabilities() -> Vec<AppItem> {
         ),
         app_item(
             "capability-quick-assist",
-            "Quick Assist (Legacy)",
-            "Remote assistance app",
+            "Quick Assist",
+            "capability-quick-assist",
             AppCategory::Capabilities,
             "System",
             "App.Support.QuickAssist",
@@ -918,7 +951,7 @@ fn get_capabilities() -> Vec<AppItem> {
         app_item(
             "capability-steps-recorder",
             "Steps Recorder",
-            "Screen recording tool",
+            "capability-steps-recorder",
             AppCategory::Capabilities,
             "Utilities",
             "App.StepsRecorder",
@@ -932,7 +965,7 @@ fn get_capabilities() -> Vec<AppItem> {
         app_item(
             "capability-windows-media-player",
             "Windows Media Player",
-            "Classic media player",
+            "capability-windows-media-player",
             AppCategory::Capabilities,
             "Media",
             "Media.WindowsMediaPlayer",
@@ -946,7 +979,7 @@ fn get_capabilities() -> Vec<AppItem> {
         app_item(
             "capability-wordpad",
             "WordPad",
-            "Rich text editor",
+            "capability-wordpad",
             AppCategory::Capabilities,
             "Productivity",
             "Microsoft.Windows.WordPad",
@@ -960,7 +993,7 @@ fn get_capabilities() -> Vec<AppItem> {
         app_item(
             "capability-notepad",
             "Notepad (Legacy)",
-            "Simple text editor",
+            "capability-notepad",
             AppCategory::Capabilities,
             "Productivity",
             "Microsoft.Windows.Notepad",
@@ -974,7 +1007,7 @@ fn get_capabilities() -> Vec<AppItem> {
         app_item(
             "capability-paint-legacy",
             "Paint (Legacy)",
-            "Classic Paint app",
+            "capability-paint-legacy",
             AppCategory::Capabilities,
             "Graphics",
             "Microsoft.Windows.MSPaint",
@@ -988,7 +1021,7 @@ fn get_capabilities() -> Vec<AppItem> {
         app_item(
             "capability-openssh-client",
             "OpenSSH Client",
-            "Secure Shell client for remote connections",
+            "capability-openssh-client",
             AppCategory::Capabilities,
             "Networking",
             "OpenSSH.Client",
@@ -1002,7 +1035,7 @@ fn get_capabilities() -> Vec<AppItem> {
         app_item(
             "capability-openssh-server",
             "OpenSSH Server",
-            "Secure Shell server for remote connections",
+            "capability-openssh-server",
             AppCategory::Capabilities,
             "Networking",
             "OpenSSH.Server",
@@ -1021,7 +1054,7 @@ fn get_optional_features() -> Vec<AppItem> {
         app_item(
             "feature-wsl",
             "Subsystem for Linux",
-            "Allows running Linux binary executables natively on Windows",
+            "feature-wsl",
             AppCategory::OptionalFeatures,
             "Development",
             "Microsoft-Windows-Subsystem-Linux",
@@ -1035,7 +1068,7 @@ fn get_optional_features() -> Vec<AppItem> {
         app_item(
             "feature-hyperv-platform",
             "Windows Hypervisor Platform",
-            "Core virtualization platform without Hyper-V management tools",
+            "feature-hyperv-platform",
             AppCategory::OptionalFeatures,
             "Virtualization",
             "Microsoft-Hyper-V-Hypervisor",
@@ -1049,7 +1082,7 @@ fn get_optional_features() -> Vec<AppItem> {
         app_item(
             "feature-hyperv",
             "Hyper-V",
-            "Virtualization platform for running multiple operating systems",
+            "feature-hyperv",
             AppCategory::OptionalFeatures,
             "Virtualization",
             "Microsoft-Hyper-V-All",
@@ -1063,7 +1096,7 @@ fn get_optional_features() -> Vec<AppItem> {
         app_item(
             "feature-hyperv-tools",
             "Hyper-V Management Tools",
-            "Tools for managing Hyper-V virtual machines",
+            "feature-hyperv-tools",
             AppCategory::OptionalFeatures,
             "Virtualization",
             "Microsoft-Hyper-V-Tools-All",
@@ -1077,7 +1110,7 @@ fn get_optional_features() -> Vec<AppItem> {
         app_item(
             "feature-dotnet35",
             ".NET Framework 3.5",
-            "Legacy .NET Framework for older applications",
+            "feature-dotnet35",
             AppCategory::OptionalFeatures,
             "Development",
             "NetFx3",
@@ -1091,7 +1124,7 @@ fn get_optional_features() -> Vec<AppItem> {
         app_item(
             "feature-windows-sandbox",
             "Windows Sandbox",
-            "Isolated desktop environment for running applications",
+            "feature-windows-sandbox",
             AppCategory::OptionalFeatures,
             "Security",
             "Containers-DisposableClientVM",
@@ -1105,7 +1138,7 @@ fn get_optional_features() -> Vec<AppItem> {
         app_item(
             "feature-recall",
             "Recall",
-            "Windows 11 feature that records user activity",
+            "feature-recall",
             AppCategory::OptionalFeatures,
             "System",
             "Recall",
@@ -1118,3 +1151,4 @@ fn get_optional_features() -> Vec<AppItem> {
         ),
     ]
 }
+

@@ -3,6 +3,7 @@
 mod app;
 mod app_definitions;
 mod download_definitions;
+mod i18n;
 mod latency;
 mod performance;
 mod updater;
@@ -41,6 +42,7 @@ pub struct GamingTweakRow {
 pub struct AppSettings {
     pub check_updates_on_startup: bool,
     pub show_console: bool,
+    pub language: Language,
 }
 
 impl Default for AppSettings {
@@ -48,8 +50,15 @@ impl Default for AppSettings {
         Self {
             check_updates_on_startup: true,
             show_console: false,
+            language: Language::English,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Language {
+    English,
+    German,
 }
 
 pub fn save_app_settings(settings: &AppSettings) {

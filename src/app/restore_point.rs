@@ -11,8 +11,9 @@ impl WinchiselApp {
             return;
         }
         let (tx, rx) = mpsc::channel();
+        let lang = self.state.settings.language;
         std::thread::spawn(move || {
-            let result = create_restore_point_worker();
+            let result = create_restore_point_worker(lang);
             let _ = tx.send(result);
         });
         self.restore_point_dialog = Some(RestorePointDialog::Progress);
@@ -28,19 +29,19 @@ impl WinchiselApp {
                 self.restore_point_load_worker = None;
                 self.restore_point_dialog = Some(RestorePointDialog::Result {
                     title: if result.success {
-                        "Restore Point".to_string()
+                        self.tr("restore_point_window").to_string()
                     } else {
-                        "Restore Point Error".to_string()
+                        self.tr("restore_point_failed").to_string()
                     },
                     message: result.message,
                 });
                 if result.success {
                     self.toasts
-                        .success("Restore point created")
+                        .success(self.tr("restore_point_success"))
                         .duration(Duration::from_secs_f64(3.5));
                 } else {
                     self.toasts
-                        .error("Restore point failed")
+                        .error(self.tr("restore_point_failed"))
                         .duration(Duration::from_secs_f64(3.5));
                 }
             }
@@ -48,11 +49,11 @@ impl WinchiselApp {
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.restore_point_load_worker = None;
                 self.restore_point_dialog = Some(RestorePointDialog::Result {
-                    title: "Restore Point Error".to_string(),
-                    message: "Failed to create restore point.".to_string(),
+                    title: self.tr("restore_point_failed").to_string(),
+                    message: self.tr("restore_point_failed_run").to_string(),
                 });
                 self.toasts
-                    .error("Restore point failed")
+                    .error(self.tr("restore_point_failed"))
                     .duration(Duration::from_secs_f64(3.5));
             }
         }
@@ -64,7 +65,7 @@ impl WinchiselApp {
         };
         match dialog {
             RestorePointDialog::Progress => {
-                egui::Window::new("Create Restore Point")
+                egui::Window::new(self.tr("restore_point_window"))
                     .collapsible(false)
                     .resizable(false)
                     .default_width(420.0)
@@ -73,7 +74,7 @@ impl WinchiselApp {
                         ui.vertical_centered(|ui| {
                             ui.add(egui::Spinner::new().size(28.0));
                             ui.add_space(10.0);
-                            ui.label("Creating restore point. This can take a moment...");
+                            ui.label(self.tr("restore_point_creating"));
                         });
                     });
             }
@@ -86,7 +87,7 @@ impl WinchiselApp {
                     .show(ctx, |ui| {
                         ui.label(message);
                         ui.add_space(12.0);
-                        if ui.button("Close").clicked() {
+                        if ui.button(self.tr("update_close")).clicked() {
                             self.restore_point_dialog = None;
                         }
                     });
@@ -95,7 +96,7 @@ impl WinchiselApp {
     }
 }
 
-fn create_restore_point_worker() -> RestorePointResult {
+fn create_restore_point_worker(lang: crate::Language) -> RestorePointResult {
     #[cfg(windows)]
     {
         use std::process::Stdio;
@@ -114,12 +115,12 @@ Checkpoint-Computer -Description 'Winchisel Restore Point' -RestorePointType 'MO
         match output {
             Ok(out) if out.status.success() => RestorePointResult {
                 success: true,
-                message: "Restore point created successfully.".to_string(),
+                message: crate::i18n::t(lang, "restore_point_success").to_string(),
             },
             Ok(out) => {
                 let stderr = String::from_utf8_lossy(&out.stderr);
                 let detail = if stderr.trim().is_empty() {
-                    "Failed to create restore point.".to_string()
+                    crate::i18n::t(lang, "restore_point_failed").to_string()
                 } else {
                     stderr.trim().to_string()
                 };
@@ -130,7 +131,11 @@ Checkpoint-Computer -Description 'Winchisel Restore Point' -RestorePointType 'MO
             }
             Err(e) => RestorePointResult {
                 success: false,
-                message: format!("Failed to run PowerShell.\n\n{}", e),
+                message: format!(
+                    "{} \n\n{}",
+                    crate::i18n::t(lang, "restore_point_failed_run"),
+                    e
+                ),
             },
         }
     }
@@ -138,7 +143,7 @@ Checkpoint-Computer -Description 'Winchisel Restore Point' -RestorePointType 'MO
     {
         RestorePointResult {
             success: false,
-            message: "Restore points are only supported on Windows.".to_string(),
+            message: crate::i18n::t(lang, "restore_point_failed_windows").to_string(),
         }
     }
 }

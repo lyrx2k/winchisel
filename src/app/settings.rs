@@ -5,22 +5,74 @@ use iconflow::Pack;
 impl WinchiselApp {
     pub(crate) fn render_settings_tab(&mut self, ui: &mut egui::Ui) {
         Self::page_shell(
-                ui,
-                "Settings",
-                "Keep the app behavior aligned with your workflow.",
-                |ui| {
-                    Self::card_frame().show(ui, |ui| {
+            ui,
+            self.tr("settings_title"),
+            self.tr("settings_subtitle"),
+            |ui| {
+                let check_updates_startup = self.tr("check_updates_startup").to_string();
+                let show_console = self.tr("show_console").to_string();
+                Self::card_frame().show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(Self::icon_text(
+                                    Pack::Lucide,
+                                    "settings-2",
+                                    16.0,
+                                    egui::Color32::from_rgb(160, 124, 220),
+                                ));
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(160, 124, 220),
+                                    self.tr("settings_application"),
+                                );
+                            });
+                            ui.label(self.tr("settings_saved_auto"));
+                        });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                            if ui
+                                .add_sized([116.0, 34.0], egui::Button::new(self.tr("open_logs")))
+                                .clicked()
+                            {
+                                self.show_log_window = true;
+                            }
+                        });
+                    });
+                    ui.add_space(10.0);
                     ui.horizontal(|ui| {
                         ui.label(Self::icon_text(
                             Pack::Lucide,
-                            "settings-2",
-                            16.0,
-                            egui::Color32::from_rgb(160, 124, 220),
+                            "languages",
+                            14.0,
+                            egui::Color32::from_rgb(226, 226, 226),
                         ));
-                        ui.colored_label(egui::Color32::from_rgb(160, 124, 220), "Application");
+                        ui.label(self.tr("language"));
+                        let previous_language = self.state.settings.language;
+                        egui::ComboBox::from_id_salt("language_combo")
+                            .selected_text(match self.state.settings.language {
+                                crate::Language::German => "Deutsch",
+                                crate::Language::English => "English",
+                            })
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut self.state.settings.language,
+                                    crate::Language::German,
+                                    "Deutsch",
+                                );
+                                ui.selectable_value(
+                                    &mut self.state.settings.language,
+                                    crate::Language::English,
+                                    "English",
+                                );
+                            });
+                        if self.state.settings.language != previous_language {
+                            self.settings_save_snapshot = self.state.settings.clone();
+                            self.settings_save_due_at = None;
+                            crate::save_app_settings(&self.state.settings);
+                            self.apply_language_change();
+                            self.state.update_status = self.tr("settings_saved").to_string();
+                        }
                     });
-                    ui.label("These settings are saved automatically.");
-                    ui.add_space(10.0);
+                    ui.add_space(6.0);
                     ui.horizontal(|ui| {
                         ui.label(Self::icon_text(
                             Pack::Lucide,
@@ -28,9 +80,10 @@ impl WinchiselApp {
                             14.0,
                             egui::Color32::from_rgb(226, 226, 226),
                         ));
-                        ui.checkbox(
+                        ui.label(check_updates_startup);
+                        Self::native_toggle_switch(
+                            ui,
                             &mut self.state.settings.check_updates_on_startup,
-                            "Check updates on startup",
                         );
                     });
                     ui.horizontal(|ui| {
@@ -40,12 +93,9 @@ impl WinchiselApp {
                             14.0,
                             egui::Color32::from_rgb(226, 226, 226),
                         ));
-                        ui.checkbox(&mut self.state.settings.show_console, "Show console");
+                        ui.label(show_console);
+                        Self::native_toggle_switch(ui, &mut self.state.settings.show_console);
                     });
-                    ui.add_space(8.0);
-                    if ui.button("Open Logs").clicked() {
-                        self.show_log_window = true;
-                    }
                     ui.add_space(12.0);
                     ui.separator();
                     ui.add_space(12.0);
@@ -56,7 +106,10 @@ impl WinchiselApp {
                             16.0,
                             egui::Color32::from_rgb(160, 124, 220),
                         ));
-                        ui.colored_label(egui::Color32::from_rgb(160, 124, 220), "System Protection");
+                        ui.colored_label(
+                            egui::Color32::from_rgb(160, 124, 220),
+                            self.tr("system_protection"),
+                        );
                     });
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
@@ -68,12 +121,18 @@ impl WinchiselApp {
                                     14.0,
                                     egui::Color32::from_rgb(226, 226, 226),
                                 ));
-                                ui.label("System Restore Point");
+                                ui.label(self.tr("restore_point"));
                             });
-                            ui.label("Create a rollback point before major system changes");
+                            ui.label(self.tr("restore_point_desc"));
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("Create Restore Point").clicked() {
+                            let restore_button = egui::Button::new(self.tr("create_restore_point"))
+                                .fill(egui::Color32::from_rgb(35, 54, 80))
+                                .stroke(egui::Stroke::new(
+                                    1.0,
+                                    egui::Color32::from_rgb(10, 210, 254),
+                                ));
+                            if ui.add_sized([168.0, 34.0], restore_button).clicked() {
                                 self.start_restore_point();
                             }
                         });

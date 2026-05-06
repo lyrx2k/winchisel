@@ -29,18 +29,26 @@ pub(crate) enum LatencyWorkerMessage {
 
 impl WinchiselApp {
     pub(crate) fn render_latency_tab(&mut self, ui: &mut egui::Ui) {
+        let title = self.tr("latency_title").to_string();
+        let subtitle = self.tr("latency_subtitle").to_string();
+        let button_text = if self.state.latency.latency_loading {
+            self.tr("latency_analyzing").to_string()
+        } else {
+            self.tr("latency_button").to_string()
+        };
+        let starting = self.tr("latency_starting").to_string();
+        let topology = self.tr("latency_topology").to_string();
+        let scanning = self.tr("latency_scanning").to_string();
+        let begin = self.tr("latency_begin").to_string();
+        let _error_title = self.tr("latency_error_title").to_string();
+        let _admin = self.tr("latency_admin").to_string();
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                ui.heading("Latency");
-                ui.label("Analyze USB latency and device topology.");
+                ui.heading(title);
+                ui.label(subtitle);
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let button_text = if self.state.latency.latency_loading {
-                    "Analyzing..."
-                } else {
-                    "Analyze USB Latency"
-                };
                 let button = egui::Button::new(button_text)
                     .fill(egui::Color32::from_rgb(35, 88, 55))
                     .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(72, 145, 92)));
@@ -55,7 +63,7 @@ impl WinchiselApp {
                     self.state.latency.latency_completion_pending = false;
                     self.state.latency.latency_progress = 0;
                     self.state.latency.latency_progress_display = 0.0;
-                    self.state.latency.latency_status = "Starting analysis...".to_string();
+                    self.state.latency.latency_status = starting;
                     self.state.latency.latency_lines = vec![
                         latency_core::StyledLine {
                             text: String::new(),
@@ -63,14 +71,12 @@ impl WinchiselApp {
                             bold: false,
                         },
                         latency_core::StyledLine {
-                            text: "  Analyzing USB topology...".to_string(),
+                            text: format!("  {}", topology),
                             color: latency_core::COL_SKY,
                             bold: true,
                         },
                         latency_core::StyledLine {
-                            text:
-                                "  Scanning PnP devices, controller chain, MSI and power settings."
-                                    .to_string(),
+                            text: format!("  {}", scanning),
                             color: latency_core::COL_DIM,
                             bold: false,
                         },
@@ -80,7 +86,8 @@ impl WinchiselApp {
                     self.state.latency.latency_tick_next_at =
                         Some(std::time::Instant::now() + Duration::from_millis(250));
                     self.state.latency.latency_completion_ready_at = None;
-                    self.latency_load_worker = Some(Self::spawn_latency_worker());
+                    self.latency_load_worker =
+                        Some(Self::spawn_latency_worker(self.state.settings.language));
                 }
             });
         });
@@ -98,7 +105,7 @@ impl WinchiselApp {
 
         if self.state.latency.latency_lines.is_empty() && !self.state.latency.latency_loading {
             Self::card_frame().show(ui, |ui| {
-                ui.label("Click 'Analyze USB Latency' to begin analysis.");
+                ui.label(begin);
             });
         } else {
             egui::ScrollArea::vertical()
@@ -129,7 +136,7 @@ impl WinchiselApp {
         }
     }
 
-    pub(crate) fn spawn_latency_worker() -> LatencyLoadWorker {
+    pub(crate) fn spawn_latency_worker(language: crate::Language) -> LatencyLoadWorker {
         let (tx, rx) = std::sync::mpsc::channel::<LatencyWorkerMessage>();
         std::thread::spawn(move || {
             let result = latency_core::analyze_usb_latency_with_progress(|pct, msg| {
@@ -140,7 +147,7 @@ impl WinchiselApp {
                 Err(err) => vec![
                     latency_core::StyledLine::empty(),
                     latency_core::StyledLine::new(
-                        "  ERROR - USB LATENCY ANALYSIS FAILED",
+                        crate::i18n::t(language, "latency_error_title").to_string(),
                         latency_core::COL_CORAL,
                         true,
                     ),
@@ -154,7 +161,10 @@ impl WinchiselApp {
                         false,
                     ),
                     latency_core::StyledLine::empty(),
-                    latency_core::StyledLine::dim("  Make sure you are running as Administrator."),
+                    latency_core::StyledLine::dim(format!(
+                        "  {}",
+                        crate::i18n::t(language, "latency_admin")
+                    )),
                 ],
             };
             let _ = tx.send(LatencyWorkerMessage::Done(lines));
@@ -214,7 +224,9 @@ impl WinchiselApp {
             .latency_completion_ready_at
             .map(|t| t.saturating_duration_since(now))
             .unwrap_or(Duration::from_millis(250));
-        let repaint_after = next_tick.min(next_completion).max(Duration::from_millis(16));
+        let repaint_after = next_tick
+            .min(next_completion)
+            .max(Duration::from_millis(16));
         ctx.request_repaint_after(repaint_after);
     }
 
@@ -230,19 +242,19 @@ impl WinchiselApp {
         }
     }
 
-    fn latency_status_for_progress(progress: i32) -> &'static str {
+    fn latency_status_for_progress(progress: i32, lang: crate::Language) -> String {
         if progress < 25 {
-            "Checking power settings..."
+            crate::i18n::t(lang, "latency_progress_power").to_string()
         } else if progress < 45 {
-            "Scanning USB controllers..."
+            crate::i18n::t(lang, "latency_progress_controllers").to_string()
         } else if progress < 65 {
-            "Finding input devices..."
+            crate::i18n::t(lang, "latency_progress_inputs").to_string()
         } else if progress < 82 {
-            "Tracing devices to root hubs..."
+            crate::i18n::t(lang, "latency_progress_hubs").to_string()
         } else if progress < 95 {
-            "Verifying topology and power hints..."
+            crate::i18n::t(lang, "latency_progress_verify").to_string()
         } else {
-            "Building report..."
+            crate::i18n::t(lang, "latency_progress_report").to_string()
         }
     }
 
@@ -278,7 +290,7 @@ impl WinchiselApp {
                 .min(98);
                 self.state.latency.latency_progress = next;
                 self.state.latency.latency_status =
-                    Self::latency_status_for_progress(next).to_string();
+                    Self::latency_status_for_progress(next, self.state.settings.language);
                 self.sync_latency_loading_line();
                 self.state.latency.latency_tick_next_at = Some(now + Duration::from_millis(250));
                 changed = true;
@@ -313,7 +325,7 @@ impl WinchiselApp {
                 self.state.latency.latency_completion_pending = false;
                 self.state.latency.latency_completion_ready_at = None;
                 self.state.latency.latency_tick_next_at = None;
-                self.state.latency.latency_status = "Ready".to_string();
+                self.state.latency.latency_status = self.tr("update_ready").to_string();
                 self.state.latency.latency_lines =
                     std::mem::take(&mut self.state.latency.latency_pending_lines);
                 changed = true;

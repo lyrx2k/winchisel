@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use crate::app_definitions::current_language;
+use crate::i18n::t;
 use winreg::RegKey;
 use winreg::enums::*;
 
@@ -1374,6 +1376,7 @@ pub fn analyze_usb_latency_with_progress<F>(mut progress: F) -> Result<LatencyAn
 where
     F: FnMut(i32, &str),
 {
+    let lang = current_language();
     progress(5, "Checking power settings...");
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
 
@@ -1392,7 +1395,7 @@ where
         .collect();
 
     // 2. USB device tree
-    progress(35, "Reading USB registry tree...");
+    progress(35, t(lang, "latency_progress_usb_registry_tree"));
     let nodes = scan_usb_tree(&hklm);
 
     // pip_map: ParentIdPrefix value → node index

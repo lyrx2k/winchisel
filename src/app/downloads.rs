@@ -8,13 +8,16 @@ use std::sync::mpsc;
 impl WinchiselApp {
     fn rebuild_downloads_filter_cache(&mut self) {
         let query = self.state.downloads.downloads_query.trim().to_lowercase();
+        let view_mode = self.state.downloads.downloads_view_mode;
         if self.state.downloads.downloads_filter_cache_query == query
+            && self.state.downloads.downloads_filter_cache_view_mode == view_mode
             && !self.state.downloads.downloads_filter_cache_all.is_empty()
         {
             return;
         }
 
         self.state.downloads.downloads_filter_cache_query = query.clone();
+        self.state.downloads.downloads_filter_cache_view_mode = view_mode;
         self.state.downloads.downloads_filter_cache_all.clear();
         for bucket in &mut self.state.downloads.downloads_filter_cache_categories {
             bucket.clear();
@@ -26,7 +29,19 @@ impl WinchiselApp {
                 || item.description_lc.contains(&query)
                 || item.website_url_lc.contains(&query)
                 || item.winget_ids_lc.iter().any(|id| id.contains(&query));
-            if search_match {
+            let installed = self
+                .state
+                .downloads
+                .downloads_installed
+                .get(idx)
+                .copied()
+                .unwrap_or(false);
+            let view_match = match view_mode {
+                1 => installed,
+                2 => !installed,
+                _ => true,
+            };
+            if search_match && view_match {
                 self.state.downloads.downloads_filter_cache_all.push(idx);
                 let category_idx = match item.category {
                     DownloadCategory::Browsers => 0,
@@ -55,15 +70,6 @@ impl WinchiselApp {
         &self.state.downloads.downloads_filter_cache_all
     }
 
-    fn selected_download_count(&self) -> usize {
-        self.state
-            .downloads
-            .downloads_selected
-            .iter()
-            .filter(|checked| **checked)
-            .count()
-    }
-
     fn has_installable_selected_download(&self) -> bool {
         self.state
             .downloads
@@ -89,6 +95,11 @@ impl WinchiselApp {
         if idx >= self.state.downloads.downloads_selected.len() {
             return;
         }
+        let meta = self.tr("download_meta").to_string();
+        let website = self.tr("download_website").to_string();
+        let installed_label = self.tr("download_installed").to_string();
+        let not_installed_label = self.tr("download_not_installed").to_string();
+        let category_label = self.category_label_download(&item.category);
         let selected = &mut self.state.downloads.downloads_selected[idx];
         let row_frame = if *selected {
             egui::Frame::new()
@@ -124,16 +135,16 @@ impl WinchiselApp {
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
                             ui.set_width(text_width);
-                            ui.label(&item.name).on_hover_text(format!(
-                                "Winget IDs: {}\nCategory: {}\nWebsite: {}",
-                                if item.winget_ids.is_empty() {
-                                    "none".to_string()
-                                } else {
-                                    item.winget_ids.join(", ")
-                                },
-                                Self::category_label_download(&item.category),
-                                item.website_url
-                            ));
+                            let winget_ids = if item.winget_ids.is_empty() {
+                                "none".to_string()
+                            } else {
+                                item.winget_ids.join(", ")
+                            };
+                            ui.label(&item.name).on_hover_text(
+                                meta.replacen("{}", &winget_ids, 1)
+                                    .replacen("{}", &category_label, 1)
+                                    .replacen("{}", &item.website_url, 1),
+                            );
                             ui.add_space(2.0);
                             ui.label(&item.description);
                         },
@@ -148,7 +159,7 @@ impl WinchiselApp {
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
                                     if ui
-                                        .add_sized([72.0, 20.0], egui::Button::new("Website"))
+                                        .add_sized([72.0, 20.0], egui::Button::new(website))
                                         .clicked()
                                     {
                                         let _ = Command::new("cmd")
@@ -164,9 +175,9 @@ impl WinchiselApp {
                                         .copied()
                                         .unwrap_or(false);
                                     let (text, color) = if installed {
-                                        ("Installed", egui::Color32::from_rgb(96, 181, 103))
+                                        (installed_label, egui::Color32::from_rgb(96, 181, 103))
                                     } else {
-                                        ("Not installed", egui::Color32::from_rgb(210, 80, 80))
+                                        (not_installed_label, egui::Color32::from_rgb(210, 80, 80))
                                     };
                                     ui.add_sized(
                                         [100.0, 14.0],
@@ -188,7 +199,7 @@ impl WinchiselApp {
         }
         let items = self.selected_download_items();
         if items.is_empty() {
-            self.state.update_status = "Nothing selected".to_string();
+            self.state.update_status = self.tr("download_nothing_selected").to_string();
             return;
         }
 
@@ -226,7 +237,7 @@ impl WinchiselApp {
             let _ = tx.send(DownloadInstallResult { ok, fail });
         });
         self.downloads_install_worker = Some(DownloadInstallWorker { rx });
-        self.state.update_status = "Installing selected downloads...".to_string();
+        self.state.update_status = self.tr("download_installing").to_string();
     }
 
     pub(crate) fn poll_download_install(&mut self) {
@@ -235,54 +246,67 @@ impl WinchiselApp {
         };
         match worker.rx.try_recv() {
             Ok(result) => {
-                self.state.update_status =
-                    format!("Installed: {}  Failed: {}", result.ok, result.fail);
+                self.state.update_status = self
+                    .tr("download_result")
+                    .replacen("{}", &result.ok.to_string(), 1)
+                    .replacen("{}", &result.fail.to_string(), 1);
                 self.downloads_cache_ready = false;
                 self.downloads_install_worker = None;
                 self.start_downloads_load();
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
-                self.state.update_status = "Install job failed".to_string();
+                self.state.update_status = self.tr("download_install_job_failed").to_string();
                 self.downloads_install_worker = None;
             }
         }
     }
 
-    fn downloads_category_label(idx: usize) -> &'static str {
+    fn downloads_category_label(&self, idx: usize) -> &'static str {
         match idx {
-            0 => "Browsers",
-            1 => "Document Viewers",
-            2 => "Messaging, Email & Calendar",
-            3 => "Online Storage & Backup",
-            4 => "Multimedia",
-            5 => "Imaging",
-            6 => "Customization Utilities",
-            7 => "Gaming",
-            8 => "Compression",
-            9 => "File & Disk Management",
-            10 => "Remote Access",
-            11 => "Optical Disc Tools",
-            12 => "Other Utilities",
-            13 => "Privacy & Security",
-            14 => "Development Apps",
-            _ => "Runtimes & Dependencies",
+            0 => self.tr("download_category_0"),
+            1 => self.tr("download_category_1"),
+            2 => self.tr("download_category_2"),
+            3 => self.tr("download_category_3"),
+            4 => self.tr("download_category_4"),
+            5 => self.tr("download_category_5"),
+            6 => self.tr("download_category_6"),
+            7 => self.tr("download_category_7"),
+            8 => self.tr("download_category_8"),
+            9 => self.tr("download_category_9"),
+            10 => self.tr("download_category_10"),
+            11 => self.tr("download_category_11"),
+            12 => self.tr("download_category_12"),
+            13 => self.tr("download_category_13"),
+            14 => self.tr("download_category_14"),
+            _ => self.tr("download_category_15"),
         }
     }
 
     pub(crate) fn render_downloads_tab(&mut self, ui: &mut egui::Ui) {
         self.start_downloads_load();
+        let title = self.tr("download_title").to_string();
+        let subtitle = self.tr("download_subtitle").to_string();
+        let search = self.tr("download_search").to_string();
+        let refresh = self.tr("download_refresh").to_string();
+        let install_selected = self.tr("download_install_selected").to_string();
+        let loading = self.tr("download_loading").to_string();
+        let none = self.tr("download_none").to_string();
+        let selected_label = self.tr("downloads_selected").to_string();
+        let all_items = self.tr("debloater_all_items").to_string();
+        let installed_only = self.tr("debloater_installed_only").to_string();
+        let not_installed_only = self.tr("debloater_not_installed_only").to_string();
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.heading("Apps & Downloads");
-                    ui.label("Install popular software with one click.");
+                    ui.heading(title);
+                    ui.label(subtitle);
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_sized(
                         [280.0, 30.0],
                         egui::TextEdit::singleline(&mut self.state.downloads.downloads_query)
-                            .hint_text("Search apps & downloads..."),
+                            .hint_text(search),
                     );
                 });
             });
@@ -294,10 +318,11 @@ impl WinchiselApp {
 
             ui.horizontal(|ui| {
                 if ui
-                    .add_sized([96.0, 34.0], egui::Button::new("Refresh"))
+                    .add_sized([96.0, 34.0], egui::Button::new(refresh))
                     .clicked()
                 {
-                    self.state.downloads.downloads_items = get_all_downloads();
+                    self.state.downloads.downloads_items =
+                        get_all_downloads(self.state.settings.language);
                     self.state.downloads.downloads_selected =
                         vec![false; self.state.downloads.downloads_items.len()];
                     self.state.downloads.downloads_installed =
@@ -311,13 +336,44 @@ impl WinchiselApp {
                     self.start_downloads_load();
                 }
                 ui.add_space(8.0);
-                ui.label(format!("{} selected", self.selected_download_count()));
+                ui.label(selected_label);
+                ui.add_space(12.0);
+                let previous_view_mode = self.state.downloads.downloads_view_mode;
+                egui::ComboBox::from_id_salt("downloads_view_mode")
+                    .width(180.0)
+                    .selected_text(match self.state.downloads.downloads_view_mode {
+                        1 => installed_only.clone(),
+                        2 => not_installed_only.clone(),
+                        _ => all_items.clone(),
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut self.state.downloads.downloads_view_mode,
+                            0,
+                            &all_items,
+                        );
+                        ui.selectable_value(
+                            &mut self.state.downloads.downloads_view_mode,
+                            1,
+                            &installed_only,
+                        );
+                        ui.selectable_value(
+                            &mut self.state.downloads.downloads_view_mode,
+                            2,
+                            &not_installed_only,
+                        );
+                    });
+                if self.state.downloads.downloads_view_mode != previous_view_mode {
+                    self.state.downloads.downloads_filter_cache_query.clear();
+                    self.state.downloads.downloads_filter_cache_view_mode = usize::MAX;
+                    self.state.downloads.downloads_filter_cache_all.clear();
+                }
                 ui.add_space(12.0);
                 let install_enabled = self.has_installable_selected_download();
                 if ui
                     .add_enabled(
                         install_enabled,
-                        egui::Button::new("Install Selected")
+                        egui::Button::new(install_selected)
                             .min_size(egui::vec2(132.0, 34.0))
                             .fill(egui::Color32::from_rgb(35, 88, 55))
                             .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(72, 145, 92))),
@@ -337,20 +393,21 @@ impl WinchiselApp {
                 ui.vertical_centered(|ui| {
                     ui.add(egui::Spinner::new().size(28.0));
                     ui.add_space(10.0);
-                    ui.strong("Loading apps & downloads...");
+                    ui.strong(loading);
                 });
                 ui.add_space(40.0);
             }
 
-            let visible_items: HashSet<usize> = self.filtered_download_items().iter().copied().collect();
+            let visible_items: HashSet<usize> =
+                self.filtered_download_items().iter().copied().collect();
             if visible_items.is_empty() {
-                ui.label("No apps or downloads to display.");
+                ui.label(none);
             } else {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         for idx in 0..16 {
-                            let label = Self::downloads_category_label(idx);
+                            let label = self.downloads_category_label(idx);
                             let category_items = self
                                 .state
                                 .downloads

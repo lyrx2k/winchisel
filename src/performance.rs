@@ -1564,6 +1564,7 @@ pub const RAW_REG_RULES: &[RawRegRule] = &[
 ];
 
 use crate::GamingTweakRow;
+use crate::{Language, i18n::t};
 use std::collections::{HashMap, HashSet};
 use std::os::windows::process::CommandExt;
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
@@ -1574,9 +1575,8 @@ use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WRITE};
 pub struct RawCatalogItemNative {
     pub id: &'static str,
     pub name: &'static str,
-    pub desc: &'static str,
-    pub group: &'static str,
-    pub input: &'static str,
+    pub group: i32,
+    pub input: i32,
     pub options: &'static [&'static str],
 }
 
@@ -1584,25 +1584,22 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-game-mode",
         name: "Game Mode",
-        desc: "Optimize your PC for play by turning things off in the background",
-        group: "Gaming",
-        input: "Toggle",
+        group: 0,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-performance-explorer-mouse-precision",
         name: "Enhance Pointer Precision",
-        desc: "Adjust cursor speed based on movement velocity (mouse acceleration). Most competitive gamers disable this for consistent aiming in FPS games",
-        group: "Gaming",
-        input: "Toggle",
+        group: 0,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-performance-mouse-hover-time",
         name: "Mouse Hover Time",
-        desc: "Controls how long you must hover over an element before it activates (in milliseconds). Lower values make tooltips, menus, and hover effects appear faster. Default is 400ms",
-        group: "Gaming",
-        input: "Selection",
+        group: 0,
+        input: 1,
         options: &[
             "1ms (Instant)",
             "10ms (Very Fast)",
@@ -1615,105 +1612,92 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-performance-autostart-delay",
         name: "Startup Delay for Apps",
-        desc: "Delay startup applications by 10 seconds after boot to improve initial system responsiveness. Windows becomes usable faster, but your startup apps take longer to load",
-        group: "Gaming",
-        input: "Toggle",
+        group: 0,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-background-apps",
         name: "Let Apps Run in Background",
-        desc: "Control whether apps can run in the background via Group Policy. Force Deny removes per-app background settings from Windows Settings. Use User in Control if you need apps like Teams, Zoom, or WhatsApp",
-        group: "Gaming",
-        input: "Selection",
+        group: 0,
+        input: 1,
         options: &["User in Control (Default)", "Force Allow", "Force Deny"],
     },
     RawCatalogItemNative {
         id: "gaming-storage-sense",
         name: "Storage Sense",
-        desc: "Automatically free up disk space by removing temporary files, emptying the recycle bin, and managing downloads",
-        group: "Gaming",
-        input: "Toggle",
+        group: 0,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-performance-explorer-search",
         name: "Search Entire File System",
-        desc: "Search your entire file system instead of only indexed locations. This provides more complete results but is significantly slower than indexed search and increases disk activity",
-        group: "Gaming",
-        input: "Toggle",
+        group: 0,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-performance-search-webview2",
         name: "WebView2 in Windows Search",
-        desc: "Allow Windows Search to use WebView2 (Edge) for rendering search results. Disabling removes Edge processes spawned by SearchHost.exe, reducing resource usage. Uses an undocumented Windows Feature Management override (feature ID 37926450) that may change in future Windows updates",
-        group: "Gaming",
-        input: "Toggle",
+        group: 0,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-performance-wallpaper-compression",
         name: "Allow Desktop Wallpaper Compression",
-        desc: "Allow Windows to compress wallpapers to save disk space and improve performance. Only affects images in JPEG format.",
-        group: "Gaming",
-        input: "Toggle",
+        group: 0,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-performance-explorer-menu-show-delay",
         name: "Enable Menu Show Delay",
-        desc: "Add a brief delay before displaying menus (400ms - Windows default), or show them instantly (0ms) for faster navigation",
-        group: "Gaming",
-        input: "Toggle",
+        group: 0,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-explorer-alt-tab-filter",
         name: "Alt+Tab Filter",
-        desc: "Show only traditional open windows in Alt+Tab instead of including Microsoft Edge tabs and other Windows suggestions",
-        group: "Gaming",
-        input: "Toggle",
+        group: 0,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-win32-priority",
         name: "Adjust processor for best performance of",
-        desc: "Configure how Windows allocates CPU time between foreground applications and background services",
-        group: "Processor",
-        input: "Selection",
+        group: 1,
+        input: 1,
         options: &["Programs", "Background Services"],
     },
     RawCatalogItemNative {
         id: "gaming-system-responsiveness",
         name: "System Responsiveness for Games",
-        desc: "Minimize background task interference by allocating more CPU time to your active game or multimedia application",
-        group: "Processor",
-        input: "Toggle",
+        group: 1,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-cpu-priority",
         name: "CPU Priority for Gaming",
-        desc: "Give games higher CPU scheduling priority to dedicate more processor time to your game",
-        group: "Processor",
-        input: "Toggle",
+        group: 1,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-scheduling-category",
         name: "High Scheduling Category for Gaming",
-        desc: "Assign high-priority scheduling category to ensure games receive preferential system resource allocation",
-        group: "Processor",
-        input: "Toggle",
+        group: 1,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-performance-svchost-split-threshold",
         name: "Svchost Split Threshold",
-        desc: "Set the memory threshold that determines when Windows splits services into separate svchost.exe processes. Higher values group more services together, reducing process count. Select the value matching your system RAM",
-        group: "Processor",
-        input: "Selection",
+        group: 1,
+        input: 1,
         options: &[
             "Default", "4 GB", "6 GB", "8 GB", "12 GB", "16 GB", "24 GB", "32 GB", "64 GB",
             "128 GB", "Custom",
@@ -1722,113 +1706,99 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-gpu-priority",
         name: "GPU Priority for Gaming",
-        desc: "Give games higher GPU scheduling priority to improve graphics performance and frame rates",
-        group: "Graphics",
-        input: "Toggle",
+        group: 2,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-gpu-scheduling",
         name: "Hardware-Accelerated GPU Scheduling",
-        desc: "Let your GPU manage its own memory and scheduling for reduced latency and improved performance",
-        group: "Graphics",
-        input: "Toggle",
+        group: 2,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-directx-flip-model",
         name: "Optimizations for windowed games",
-        desc: "Reduce latency and use advanced features in compatible games by using DirectX flip presentation model",
-        group: "Graphics",
-        input: "Toggle",
+        group: 2,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-directx-vrr-optimizations",
         name: "Variable Refresh Rate",
-        desc: "Enable VRR (G-Sync/FreeSync) optimizations for smoother gameplay. Requires a VRR-compatible monitor; this setting has no effect if your monitor does not support VRR",
-        group: "Graphics",
-        input: "Toggle",
+        group: 2,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-directx-auto-hdr",
         name: "Auto HDR",
-        desc: "Automatically convert SDR content to HDR for enhanced colors and brightness. Requires an HDR-capable display with HDR enabled; this setting has no effect if your display does not support HDR",
-        group: "Graphics",
-        input: "Toggle",
+        group: 2,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-nvidia-sharpening",
         name: "Legacy NVIDIA Sharpening",
-        desc: "Enable legacy NVIDIA image sharpening filter for enhanced visual clarity. Only works on older NVIDIA drivers; newer drivers should use NVIDIA Control Panel sharpening instead",
-        group: "Graphics",
-        input: "Toggle",
+        group: 2,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-fullscreen-optimizations",
         name: "Fullscreen Optimizations",
-        desc: "Allow Windows to optimize games running in fullscreen mode. Disabling can fix performance issues or stuttering in some older games that don't work well with borderless fullscreen optimization",
-        group: "Graphics",
-        input: "Toggle",
+        group: 2,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-performance-desktop-composition",
         name: "Desktop Composition Effects",
-        desc: "Enable visual effects managed by the Desktop Window Manager. Disabling may provide minor performance gains on older hardware but will break Aero effects",
-        group: "Graphics",
-        input: "Toggle",
+        group: 2,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-auto-color-management",
         name: "Automatically manage color for apps",
-        desc: "Allow Windows to automatically manage color profiles for all connected displays that support it",
-        group: "Graphics",
-        input: "Toggle",
+        group: 2,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-disable-mpo",
         name: "Multi-Plane Overlay (MPO)",
-        desc: "Composite multiple display layers in hardware using the GPU. Disabling can fix screen flickering, black screens, and stuttering on multi-monitor setups",
-        group: "Graphics",
-        input: "Toggle",
+        group: 2,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-disable-mpo-min-fps",
         name: "MPO Minimum Frame Rate Requirement",
-        desc: "Allow Desktop Window Manager to dynamically switch apps between overlay modes based on frame rate. Disabling can fix stuttering in browsers and Discord without fully disabling MPO",
-        group: "Graphics",
-        input: "Toggle",
+        group: 2,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-network-throttling",
         name: "Network Throttling",
-        desc: "Controls network packet rate limiting for multimedia applications. Keeping throttling enabled (default: 10 packets/ms) is recommended as it provides better DPC latency for gaming than disabling it entirely",
-        group: "Network",
-        input: "Toggle",
+        group: 3,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-nagle-algorithm",
         name: "Nagle's Algorithm",
-        desc: "Buffers small network packets before sending to reduce overhead. Turn off to lower latency in online games, or keep on for general-purpose network efficiency",
-        group: "Network",
-        input: "Toggle",
+        group: 3,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-dns-server",
         name: "DNS Server",
-        desc: "Select a DNS server for all network adapters. Changes apply to every adapter on your system (Wi-Fi and Ethernet). Use Automatic to restore your default ISP/router DNS",
-        group: "Network",
-        input: "Selection",
+        group: 3,
+        input: 1,
         options: &[
             "Setting_gaming-dns-server_Option_0",
             "Setting_gaming-dns-server_Option_1",
@@ -1843,57 +1813,50 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-virtualization-based-security",
         name: "Virtualization Based Security (VBS)",
-        desc: "Isolates parts of memory to protect the system from vulnerabilities. Disabling can improve gaming performance but reduces system security",
-        group: "Security",
-        input: "Toggle",
+        group: 4,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-memory-integrity",
         name: "Memory Integrity (HVCI)",
-        desc: "Prevents malicious code from being inserted into high-security processes. Disabling can improve gaming performance but reduces system security",
-        group: "Security",
-        input: "Toggle",
+        group: 4,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-xbox-game-dvr",
         name: "Xbox Game DVR",
-        desc: "Record gameplay clips and take screenshots using the Xbox Game Bar overlay. Disabling reduces CPU/GPU usage and can improve frame rates",
-        group: "Xbox",
-        input: "Toggle",
+        group: 5,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-game-bar-controller",
         name: "Game Bar Controller Access",
-        desc: "Allow your Xbox/compatible controller to open Game Bar by pressing the Xbox button. Disable to prevent accidental Game Bar activation during gaming",
-        group: "Xbox",
-        input: "Toggle",
+        group: 5,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-game-bar-tips",
         name: "Game Bar Tips and Hints",
-        desc: "Show tips and hints about Game Bar features when opening the overlay. Disabling reduces distractions during gameplay",
-        group: "Xbox",
-        input: "Toggle",
+        group: 5,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-performance-background-services",
         name: "Optimize Background Services",
-        desc: "Reduce the startup timeout for Windows services from 60 to 30 seconds. This can speed up boot time slightly",
-        group: "System Services",
-        input: "Toggle",
+        group: 6,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-sysmain-service",
         name: "SysMain Service (Superfetch)",
-        desc: "Preload frequently used applications into RAM for faster launch times. Automatic is recommended for HDD or mixed-storage systems; Manual or Disabled is only suitable for SSD-only systems",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "Disabled (Recommended for SSD)",
             "Manual",
@@ -1903,17 +1866,15 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-performance-prefetch",
         name: "Prefetch Feature",
-        desc: "Preload frequently used applications and boot files into memory to speed up launches. Generally recommended for HDDs not SSDs",
-        group: "System Services",
-        input: "Toggle",
+        group: 6,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-windows-search-service",
         name: "Windows Search Indexing Service",
-        desc: "Indexes files and folders for faster search results. Disabling reduces background CPU and disk activity but breaks Outlook search and makes Start Menu and File Explorer search slow or unreliable",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -1923,9 +1884,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-print-spooler-service",
         name: "Print Spooler Service",
-        desc: "Manages print jobs sent to printers. If you don't use a printer, set to Manual or Disabled to free up system resources",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -1935,9 +1895,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-telemetry-service",
         name: "Connected User Experiences and Telemetry Service",
-        desc: "Sends usage data and diagnostics to Microsoft. Setting to Manual or Disabled reduces background network and CPU usage",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -1947,9 +1906,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-connected-devices-platform-service",
         name: "Connected Devices Platform Service",
-        desc: "Enables cross-device experiences like phone linking and nearby sharing. Disabling reduces background activity and device interaction logging",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -1959,9 +1917,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-compatibility-assistant-service",
         name: "Program Compatibility Assistant Service",
-        desc: "Monitors programs for compatibility issues and suggests fixes. Disabling prevents compatibility prompts and saves minor system resources",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -1971,9 +1928,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-error-reporting-service",
         name: "Windows Error Reporting Service",
-        desc: "Collects and sends crash data to Microsoft. Disabling prevents crash reporting, reduces network traffic, and improves privacy with minimal system impact",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -1983,9 +1939,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-geolocation-service",
         name: "Geolocation Service",
-        desc: "Tracks your physical location for apps and services. Disabling improves privacy and prevents location tracking, but apps won't be able to use location features",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -1995,9 +1950,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-retail-demo-service",
         name: "Retail Demo Service",
-        desc: "Controls device activity when in retail demo mode. Safe to disable for personal computers as it only serves retail display purposes",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2007,9 +1961,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-insider-service",
         name: "Windows Insider Service",
-        desc: "Manages Windows Insider Program features and preview builds. Safe to disable if you're not participating in the Windows Insider Program",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2019,9 +1972,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-phone-service",
         name: "Phone Service",
-        desc: "Manages telephony state on the device. Safe to disable if you don't use phone connectivity features or make calls from your PC",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2031,9 +1983,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-wallet-service",
         name: "Wallet Service",
-        desc: "Provides wallet functionality for payment and NFC scenarios. Safe to disable if you don't use Microsoft Wallet features",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2043,9 +1994,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-smart-card-services",
         name: "Smart Card Services",
-        desc: "Enables smart card reader functionality for security authentication. Safe to disable if you don't use physical smart cards or card readers",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2055,9 +2005,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-maps-broker-service",
         name: "Downloaded Maps Manager",
-        desc: "Provides access to downloaded maps for applications. Set to Manual to allow map access when needed while preventing unnecessary background activity",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2067,9 +2016,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-fax-service",
         name: "Fax Service",
-        desc: "Enables sending and receiving faxes. Safe to disable for most users as fax functionality is rarely used on modern systems",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_DisabledRecommended",
             "ServiceOption_Manual",
@@ -2079,9 +2027,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-wmp-network-service",
         name: "Windows Media Player Network Sharing Service",
-        desc: "Shares Windows Media Player libraries to other networked players and media devices. Safe to disable if you don't share media over your network",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_DisabledRecommended",
             "ServiceOption_Manual",
@@ -2091,9 +2038,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-mixed-reality-service",
         name: "Windows Mixed Reality OpenXR Service",
-        desc: "Runs OpenXR applications on Windows Mixed Reality devices. Safe to disable if you don't use VR or AR headsets",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2103,9 +2049,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-mobile-hotspot-service",
         name: "Windows Mobile Hotspot Service",
-        desc: "Provides ability to share internet connection with other devices. Set to Manual to keep functionality available while preventing unnecessary background activity",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2115,9 +2060,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-sms-router-service",
         name: "Microsoft Windows SMS Router Service",
-        desc: "Routes SMS messages according to rules. Safe to disable if you don't use SMS features on your PC",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2127,9 +2071,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-parental-controls-service",
         name: "Parental Controls Service",
-        desc: "Enables parental controls and family safety features. Safe to disable if you don't use parental control features",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2139,9 +2082,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-payments-nfc-service",
         name: "Payments and NFC/SE Manager",
-        desc: "Manages payments and Near Field Communication secure elements. Safe to disable if you don't use NFC payment features",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2151,9 +2093,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-spot-verifier-service",
         name: "Spot Verifier Service",
-        desc: "Verifies potential file system corruptions. Set to Manual to allow verification when needed while reducing background activity",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2163,9 +2104,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-remote-access-manager",
         name: "Remote Access Connection Manager",
-        desc: "Manages VPN and dial-up connections. Set to Manual to reduce background activity while keeping VPN functionality available when needed.",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2175,9 +2115,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-remote-access-auto",
         name: "Remote Access Auto Connection Manager",
-        desc: "Automatically connects to remote networks when programs reference remote resources. Safe to disable if you don't use auto-connect VPN features",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2187,9 +2126,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-remote-desktop-services",
         name: "Remote Desktop Services",
-        desc: "Allows users to connect interactively to a remote computer. Set to Manual to reduce background activity while keeping Remote Desktop available.",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2199,9 +2137,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-remote-desktop-configuration",
         name: "Remote Desktop Configuration",
-        desc: "Manages Remote Desktop Services and Remote Desktop related configurations. Set to Manual to reduce background activity while keeping Remote Desktop available",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2211,9 +2148,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-remote-desktop-port-redirector",
         name: "Remote Desktop Services UserMode Port Redirector",
-        desc: "Allows local device redirection for Remote Desktop connections. Safe to disable if you don't need to share local devices during Remote Desktop sessions",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2223,9 +2159,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-xbox-auth-manager",
         name: "Xbox Live Auth Manager",
-        desc: "Provides authentication and authorization services for Xbox Live. Safe to disable if you don't use Xbox Game Pass, Microsoft Store games, or Xbox features",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2235,9 +2170,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-xbox-game-save",
         name: "Xbox Live Game Save",
-        desc: "Syncs game saves to Xbox Live cloud. Only needed for Xbox Game Pass and Microsoft Store games with cloud save features",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2247,9 +2181,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-xbox-networking",
         name: "Xbox Live Networking Service",
-        desc: "Supports Xbox Live multiplayer networking. Required for Xbox multiplayer gaming but not needed for Steam/Epic/other gaming platforms",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2259,9 +2192,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-biometric-service",
         name: "Windows Biometric Service",
-        desc: "Enables fingerprint and facial recognition login via Windows Hello. Safe to disable on desktop systems without biometric hardware",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2271,9 +2203,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-touch-keyboard-service",
         name: "Touch Keyboard and Handwriting Panel Service",
-        desc: "Manages the Windows Input Experience including touch keyboard, pen/stylus input, handwriting panel, emoji panel (Win+.), and Xbox controller keyboard. Disabling will break all virtual/software keyboard input but is safe on desktop systems without touchscreen, pen, or gamepad",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_DisabledRecommended",
             "ServiceOption_Manual",
@@ -2283,9 +2214,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-sensor-monitoring-service",
         name: "Sensor Monitoring Service",
-        desc: "Monitors various sensors like ambient light and orientation. Safe to disable on desktop systems without sensor hardware",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2295,9 +2225,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-sensor-data-service",
         name: "Sensor Data Service",
-        desc: "Delivers data from a variety of sensors to applications. Safe to disable on desktop systems without sensor hardware",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_Disabled",
             "ServiceOption_ManualRecommended",
@@ -2307,9 +2236,8 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "gaming-ai-fabric-service",
         name: "Windows AI Fabric Service",
-        desc: "Windows AI Fabric Service (WSAIFabricSvc) manages AI workloads. Disable if you don't use Windows AI features",
-        group: "System Services",
-        input: "Selection",
+        group: 6,
+        input: 1,
         options: &[
             "ServiceOption_DisabledRecommended",
             "ServiceOption_Manual",
@@ -2319,153 +2247,134 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "CompatibilityAppraiserTask",
         name: "Microsoft Compatibility Appraiser Task",
-        desc: "Collects program compatibility telemetry for Windows upgrades. Works alongside the Connected User Experiences and Telemetry Service. Disable to reduce telemetry and background system activity",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "ProgramDataUpdaterTask",
         name: "Program Data Updater Task",
-        desc: "Updates the program compatibility database with information about installed applications. Disable to reduce telemetry collection",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "CEIPConsolidatorTask",
         name: "Customer Experience Improvement Program Consolidator",
-        desc: "Consolidates and uploads usage data as part of the Customer Experience Improvement Program. Works with the Connected User Experiences and Telemetry Service. Disable to improve privacy",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "UsbCeipTask",
         name: "USB CEIP Task",
-        desc: "Collects USB device-related telemetry for the Customer Experience Improvement Program. Disable to reduce telemetry",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "DiskDiagnosticTask",
         name: "Disk Diagnostic Data Collector Task",
-        desc: "Collects disk diagnostic information and S.M.A.R.T. data for Microsoft. Disable to reduce background disk activity and telemetry",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "FeedbackDmClientTask",
         name: "Feedback DmClient Task",
-        desc: "Collects feedback and diagnostic data for Microsoft. Disable to improve privacy and reduce telemetry",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "FeedbackDmClientDownloadTask",
         name: "Feedback DmClient Scenario Download Task",
-        desc: "Downloads feedback scenarios and configuration data from Microsoft. Disable to reduce telemetry and network activity",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "ErrorReportingQueueTask",
         name: "Windows Error Reporting Queue Task",
-        desc: "Queues crash reports and error data to send to Microsoft. Works alongside the Windows Error Reporting Service. Disable both to prevent crash data collection",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "SqmTask",
         name: "Software Quality Metrics Task",
-        desc: "Collects software quality metrics and reliability data for Microsoft telemetry. Disable to improve privacy",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "MareBackupTask",
         name: "MAR (Malicious Software Removal) Backup Task",
-        desc: "Backs up Microsoft Assisted Recovery data. Disable to reduce background system activity",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "StartupAppTask",
         name: "Startup App Task",
-        desc: "Tracks and monitors startup applications for telemetry and diagnostics. Disable to reduce telemetry",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "MapsUpdateTask",
         name: "Maps Update Task",
-        desc: "Updates offline maps data for the Windows Maps app. Disable if you don't use the Maps app to save bandwidth and storage",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "AutochkProxyTask",
         name: "AutoChk Proxy Task",
-        desc: "Performs disk checking operations and collects diagnostic data. Consider keeping enabled for disk health monitoring",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "FamilySafetyTask",
         name: "Family Safety Monitor Task",
-        desc: "Monitors family safety settings and usage. Disable if you don't use family safety features",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "PowerEfficiencyTask",
         name: "Power Efficiency Diagnostics Task",
-        desc: "Analyzes system power consumption and collects energy efficiency data. Disable to reduce telemetry and background analysis",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "WindowsAIRecallConfig",
         name: "Windows AI Recall Configuration Task",
-        desc: "Windows AI scheduled tasks including Recall configuration. Disable to prevent AI features from running in the background",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "WindowsAIRecallPipeline",
         name: "Windows AI Recall Pipeline Task",
-        desc: "Windows AI Recall pipeline task. Disable to prevent Recall pipeline processing in the background",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "OfficeActionsServer",
         name: "Office Actions Server Task",
-        desc: "Office AI Actions Server scheduled task. Disable to prevent Office AI from running in the background",
-        group: "Scheduled Tasks",
-        input: "Toggle",
+        group: 7,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "visual-effects-mode",
         name: "Visual Effects",
-        desc: "Choose how Windows displays visual effects",
-        group: "Visual Effects",
-        input: "Selection",
+        group: 8,
+        input: 1,
         options: &[
             "Let Windows choose what's best for my computer",
             "Adjust for best appearance",
@@ -2476,185 +2385,162 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     RawCatalogItemNative {
         id: "ui-effects",
         name: "Animate controls and elements inside windows",
-        desc: "Enables animation effects for controls and UI elements",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "window-animation",
         name: "Animate windows when minimizing and maximizing",
-        desc: "Shows smooth animation when windows are minimized or maximized",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "taskbar-animations",
         name: "Animations in the taskbar",
-        desc: "Controls taskbar animation effects for opening, closing, and switching windows",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "enable-peek",
         name: "Enable Peek",
-        desc: "Allows peeking at desktop when hovering over Show Desktop button",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "menu-animation",
         name: "Fade or slide menus into view",
-        desc: "Animates menus when they appear using fade or slide effects",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "fade-tooltip",
         name: "Fade or slide ToolTips into view",
-        desc: "Animates tooltips when they appear using fade or slide effects",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "fade-menu-items",
         name: "Fade out menu items after clicking",
-        desc: "Fades menu items after selection before closing the menu",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "taskbar-thumbnails",
         name: "Save taskbar thumbnail previews",
-        desc: "Saves thumbnail previews of taskbar windows for faster display",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "mouse-shadow",
         name: "Show shadows under mouse pointer",
-        desc: "Displays shadow effect underneath the mouse cursor",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "window-shadows",
         name: "Show shadows under windows",
-        desc: "Displays shadow effects underneath windows",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "show-thumbnails",
         name: "Show thumbnails instead of icons",
-        desc: "Displays image and document previews instead of generic file icons",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "translucent-selection",
         name: "Show translucent selection rectangle",
-        desc: "Display a semi-transparent selection box when dragging to select multiple files or items",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "drag-full-windows",
         name: "Show window contents while dragging",
-        desc: "Displays window contents when dragging instead of just an outline",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "combo-box-animation",
         name: "Slide open combo boxes",
-        desc: "Animates combo boxes when they open with a sliding effect",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "font-smoothing",
         name: "Smooth edges of screen fonts",
-        desc: "Apply anti-aliasing to text for smoother, more readable fonts on screen",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "smooth-scroll-listboxes",
         name: "Smooth-scroll list boxes",
-        desc: "Enables smooth scrolling in list boxes instead of jumping",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "drop-shadows",
         name: "Use drop shadows for icon labels on the desktop",
-        desc: "Add shadow effects behind desktop icon text to improve readability against backgrounds",
-        group: "Visual Effects",
-        input: "Toggle",
+        group: 8,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "gaming-narrator-hotkey",
         name: "Narrator Win+Ctrl+Enter Hotkey",
-        desc: "Enable the Win+Ctrl+Enter keyboard shortcut to quickly launch Windows Narrator screen reader",
-        group: "Accessibility",
-        input: "Toggle",
+        group: 9,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "accessibility-stickykeys-hotkey",
-        name: "StickyKeys Hotkey (Shift×5)",
-        desc: "Enable the keyboard shortcut to activate StickyKeys by pressing the Shift key five times",
-        group: "Accessibility",
-        input: "Toggle",
+        name: "StickyKeys Hotkey (ShiftÃ—5)",
+        group: 9,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "accessibility-filterkeys-hotkey",
         name: "FilterKeys Hotkey (Right Shift 8s)",
-        desc: "Enable the keyboard shortcut to activate FilterKeys by holding the right Shift key for 8 seconds",
-        group: "Accessibility",
-        input: "Toggle",
+        group: 9,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "accessibility-togglekeys-hotkey",
         name: "ToggleKeys Hotkey (Num Lock 5s)",
-        desc: "Enable the keyboard shortcut to activate ToggleKeys by holding Num Lock for 5 seconds, which plays sounds when Caps/Num/Scroll Lock are pressed",
-        group: "Accessibility",
-        input: "Toggle",
+        group: 9,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "accessibility-mousekeys-hotkey",
         name: "MouseKeys Hotkey (Alt+Shift+NumLock)",
-        desc: "Enable the keyboard shortcut to activate MouseKeys, which allows using the numeric keypad to control the mouse pointer",
-        group: "Accessibility",
-        input: "Toggle",
+        group: 9,
+        input: 0,
         options: &[],
     },
     RawCatalogItemNative {
         id: "accessibility-highcontrast-hotkey",
         name: "High Contrast Hotkey (Alt+Shift+PrtScn)",
-        desc: "Enable the keyboard shortcut to activate High Contrast mode by pressing Left Alt + Left Shift + Print Screen",
-        group: "Accessibility",
-        input: "Toggle",
+        group: 9,
+        input: 0,
         options: &[],
     },
 ];
@@ -2662,8 +2548,10 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
 static STATE_CACHE: LazyLock<Mutex<HashMap<i32, (bool, i32)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static SCHEDULED_TASK_CACHE: OnceLock<Arc<HashMap<String, bool>>> = OnceLock::new();
-static CATALOG: OnceLock<Vec<CatalogItem>> = OnceLock::new();
-static CATALOG_BY_ID: OnceLock<HashMap<i32, &'static CatalogItem>> = OnceLock::new();
+static CATALOG_EN: OnceLock<Vec<CatalogItem>> = OnceLock::new();
+static CATALOG_DE: OnceLock<Vec<CatalogItem>> = OnceLock::new();
+static CATALOG_BY_ID_EN: OnceLock<HashMap<i32, &'static CatalogItem>> = OnceLock::new();
+static CATALOG_BY_ID_DE: OnceLock<HashMap<i32, &'static CatalogItem>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 struct CatalogItem {
@@ -2672,7 +2560,6 @@ struct CatalogItem {
     category: i32,
     name: String,
     name_lc: String,
-    desc: String,
     desc_lc: String,
     input_type: i32,
     options: Vec<String>,
@@ -2794,24 +2681,27 @@ const DEPENDENCY_RULES: &[DependencyRule] = &[
     },
 ];
 
-fn catalog() -> &'static [CatalogItem] {
-    CATALOG.get_or_init(|| {
+fn catalog(lang: Language) -> &'static [CatalogItem] {
+    let cache = match lang {
+        Language::English => &CATALOG_EN,
+        Language::German => &CATALOG_DE,
+    };
+    cache.get_or_init(|| {
         PERFORMANCE_CATALOG
             .iter()
             .enumerate()
             .map(|(i, r)| CatalogItem {
                 num_id: 2000 + i as i32,
                 key: r.id,
-                category: group_to_category(r.group),
+                category: r.group,
                 name: r.name.to_string(),
                 name_lc: r.name.to_ascii_lowercase(),
-                desc: r.desc.to_string(),
-                desc_lc: r.desc.to_ascii_lowercase(),
-                input_type: if r.input.eq_ignore_ascii_case("Selection") {
-                    1
-                } else {
-                    0
-                },
+                desc_lc: format!(
+                    "{} {}",
+                    t(lang, r.id).to_ascii_lowercase(),
+                    t(Language::English, r.id).to_ascii_lowercase()
+                ),
+                input_type: if r.input == 1 { 1 } else { 0 },
                 options: if r.options.is_empty() {
                     vec!["Off".to_string(), "On".to_string()]
                 } else {
@@ -2826,9 +2716,13 @@ fn catalog() -> &'static [CatalogItem] {
     })
 }
 
-fn catalog_by_id() -> &'static HashMap<i32, &'static CatalogItem> {
-    CATALOG_BY_ID.get_or_init(|| {
-        let items = catalog();
+fn catalog_by_id(lang: Language) -> &'static HashMap<i32, &'static CatalogItem> {
+    let cache = match lang {
+        Language::English => &CATALOG_BY_ID_EN,
+        Language::German => &CATALOG_BY_ID_DE,
+    };
+    cache.get_or_init(|| {
+        let items = catalog(lang);
         items.iter().map(|item| (item.num_id, item)).collect()
     })
 }
@@ -2871,7 +2765,7 @@ fn normalize_option_label(raw: &str) -> String {
 }
 
 fn apply_bulk_profile(recommended: bool) {
-    for item in catalog() {
+    for item in catalog(Language::English) {
         apply_single_profile(item.num_id, recommended);
     }
 }
@@ -2930,92 +2824,81 @@ fn profile_rule(id: &str) -> Option<&'static ProfileRule> {
     PROFILE_RULES.iter().find(|r| r.id == id)
 }
 
-fn group_to_category(group: &str) -> i32 {
-    match group {
-        "Gaming" => 0,
-        "Processor" => 1,
-        "Graphics" => 2,
-        "Network" => 3,
-        "Security" => 4,
-        "Xbox" => 5,
-        "System Services" => 6,
-        "Scheduled Tasks" => 7,
-        "Visual Effects" => 8,
-        "Accessibility" => 9,
-        _ => 0,
-    }
-}
-
 fn item_by_num_id(id: i32) -> Option<&'static CatalogItem> {
-    catalog_by_id().get(&id).copied()
+    catalog_by_id(Language::English).get(&id).copied()
 }
 
-fn build_grouped_rows_filtered(query: &str) -> [Vec<GamingTweakRow>; 10] {
+fn build_grouped_rows_filtered(query: &str, lang: Language) -> [Vec<GamingTweakRow>; 10] {
     let q = query.trim().to_ascii_lowercase();
     let cached = STATE_CACHE.lock().ok();
-    build_grouped_rows_from(cached.as_deref(), true, Some(&q))
+    build_grouped_rows_from(cached.as_deref(), true, Some(&q), lang)
 }
 
 fn build_grouped_rows_from(
     states: Option<&HashMap<i32, (bool, i32)>>,
     detect_missing: bool,
     query: Option<&str>,
+    lang: Language,
 ) -> [Vec<GamingTweakRow>; 10] {
     let mut groups: [Vec<GamingTweakRow>; 10] = Default::default();
     let mut state_by_key: HashMap<&'static str, (bool, i32)> = HashMap::new();
     let query = query.filter(|q| !q.is_empty());
-    let items = catalog();
+    let items = catalog(lang);
     let show_sysmain_warning = has_hdd_disk();
 
-    for t in items {
+    for item in items {
         if let Some(q) = query
-            && !t.name_lc.contains(q)
-            && !t.desc_lc.contains(q)
+            && !item.name_lc.contains(q)
+            && !item.desc_lc.contains(q)
         {
             continue;
         }
-        let idx = t.category as usize;
+        let idx = item.category as usize;
         if idx >= groups.len() {
             continue;
         }
-        let (enabled, mut selected) = state_for_row(t, states, detect_missing);
-        if t.input_type == 0 {
+        let (enabled, mut selected) = state_for_row(item, states, detect_missing);
+        if item.input_type == 0 {
             selected = if enabled { 1 } else { 0 };
         } else {
-            let max = (t.options.len().saturating_sub(1)) as i32;
+            let max = (item.options.len().saturating_sub(1)) as i32;
             selected = selected.clamp(0, max);
         }
 
         let (badge_recommended, badge_default, badge_custom) =
-            profile_status_badges(t, enabled, selected);
-        state_by_key.insert(t.key, (enabled, selected));
-        let is_child = parent_for(t.key).is_some();
+            profile_status_badges(item, enabled, selected);
+        state_by_key.insert(item.key, (enabled, selected));
+        let is_child = parent_for(item.key).is_some();
         let expanded = if let Ok(m) = PERF_EXPANDED.lock() {
-            *m.get(t.key).unwrap_or(&true)
+            *m.get(item.key).unwrap_or(&true)
         } else {
             true
         };
         groups[idx].push(GamingTweakRow {
-            tweak_id: t.num_id,
-            category: t.category,
-            key: t.key,
-            name: t.name.clone(),
-            description: t.desc.clone(),
+            tweak_id: item.num_id,
+            category: item.category,
+            key: item.key,
+            name: item.name.clone(),
+            description: if lang == Language::English {
+                t(Language::English, item.key).to_string()
+            } else {
+                t(lang, item.key).to_string()
+            },
             enabled,
             is_editable: true,
             is_child,
-            is_parent: has_children(t.key),
+            is_parent: has_children(item.key),
             is_expanded: expanded,
-            warning_text: warning_for(t.key, selected, show_sysmain_warning),
-            input_type: t.input_type,
-            options: t.options.clone(),
+            warning_text: warning_for(item.key, selected, show_sysmain_warning),
+            input_type: item.input_type,
+            options: item.options.clone(),
             selected_index: selected,
-            recommended_label: profile_target_label(t, true, selected),
-            default_label: profile_target_label(t, false, selected),
+            recommended_label: profile_target_label(item, true, selected),
+            default_label: profile_target_label(item, false, selected),
             badge_recommended,
             badge_default,
             badge_custom,
-            is_new: t.is_new,
+            is_new: item.is_new,
         });
     }
     apply_dependency_editability(&mut groups, &state_by_key);
@@ -3065,7 +2948,7 @@ fn has_children(key: &str) -> bool {
 fn apply_parent_visibility(groups: &mut [Vec<GamingTweakRow>; 10]) {
     let mut parent_state: HashMap<i32, bool> = HashMap::new();
     let mut parent_lookup: HashMap<&'static str, i32> = HashMap::new();
-    for item in catalog() {
+    for item in catalog(Language::English) {
         parent_lookup.insert(item.key, item.num_id);
     }
     for group in groups.iter() {
@@ -3254,7 +3137,7 @@ fn detect_all_states_parallel() -> HashMap<i32, (bool, i32)> {
     let scheduled_task_cache = SCHEDULED_TASK_CACHE
         .get_or_init(|| Arc::new(load_scheduled_task_states()))
         .clone();
-    let items: Vec<&'static CatalogItem> = catalog().iter().collect();
+    let items: Vec<&'static CatalogItem> = catalog(Language::English).iter().collect();
     let worker_count = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4)
@@ -3403,7 +3286,7 @@ fn detect_gaming_tweak_with_task_cache_item(
 
 fn load_scheduled_task_states() -> HashMap<String, bool> {
     const CREATE_NO_WINDOW: u32 = 0x08000000;
-    let paths: Vec<&str> = catalog()
+    let paths: Vec<&str> = catalog(Language::English)
         .iter()
         .filter_map(|item| scheduled_task_for_key(canonical_key(item.key)))
         .collect();
@@ -3730,7 +3613,7 @@ fn get_scheduled_task_enabled(full_path: &str) -> Option<bool> {
     let (task_path, task_name) = split_task_path(full_path)?;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
     let cmd = format!(
-        "$t=Get-ScheduledTask -TaskPath '{}' -TaskName '{}' -ErrorAction SilentlyContinue; if($null -eq $t){{''}} else {{ if($t.Settings.Enabled){{'1'}} else {{'0'}} }}",
+        "$t=Get-ScheduledTask -TaskPath '{}' -TaskName '{}' -ErrorAction SilentlyContinue; if($null -eq $t){{''}} else {{ if($item.Settings.Enabled){{'1'}} else {{'0'}} }}",
         task_path.replace('\'', "''"),
         task_name.replace('\'', "''")
     );
@@ -4235,23 +4118,23 @@ fn apply_dns_option(option_index: i32) {
         .output();
 }
 
-pub fn reload_gaming_tweaks_filtered(query: &str) -> [Vec<GamingTweakRow>; 10] {
+pub fn reload_gaming_tweaks_filtered(query: &str, lang: Language) -> [Vec<GamingTweakRow>; 10] {
     let has_cache = STATE_CACHE.lock().ok().is_some_and(|m| !m.is_empty());
     if !has_cache {
         let states = detect_all_states_parallel();
         if let Ok(mut m) = STATE_CACHE.lock() {
             *m = states;
         }
-        return build_grouped_rows_filtered(query);
+        return build_grouped_rows_filtered(query, lang);
     }
     let q = query.trim().to_ascii_lowercase();
     let cached = STATE_CACHE.lock().ok();
-    build_grouped_rows_from(cached.as_deref(), false, Some(&q))
+    build_grouped_rows_from(cached.as_deref(), false, Some(&q), lang)
 }
 
-pub fn preview_gaming_tweaks(query: &str) -> [Vec<GamingTweakRow>; 10] {
+pub fn preview_gaming_tweaks(query: &str, lang: Language) -> [Vec<GamingTweakRow>; 10] {
     let q = query.trim().to_ascii_lowercase();
-    build_grouped_rows_from(None, false, Some(&q))
+    build_grouped_rows_from(None, false, Some(&q), lang)
 }
 
 pub fn toggle_gaming_tweak_state(id: i32, enabled: bool) {
@@ -4286,21 +4169,6 @@ pub fn toggle_gaming_expand_state(id: i32) {
         let current = *m.get(item.key).unwrap_or(&true);
         m.insert(item.key, !current);
     }
-}
-
-pub fn performance_group_labels() -> [&'static str; 10] {
-    [
-        "Gaming",
-        "Processor",
-        "Graphics",
-        "Network",
-        "Security",
-        "Xbox",
-        "System Services",
-        "Scheduled Tasks",
-        "Visual Effects",
-        "Accessibility",
-    ]
 }
 
 fn open_key(root: HKEY, path: &str) -> Option<RegKey> {
@@ -4412,7 +4280,6 @@ mod tests {
             num_id: 0,
             key: "custom-selection",
             name: String::new(),
-            desc: String::new(),
             desc_lc: String::new(),
             category: 0,
             input_type: 1,
@@ -4437,7 +4304,6 @@ mod tests {
             num_id: 0,
             key: "gaming-background-apps",
             name: String::new(),
-            desc: String::new(),
             desc_lc: String::new(),
             category: 0,
             input_type: 1,

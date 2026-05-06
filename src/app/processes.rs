@@ -98,13 +98,14 @@ impl WinchiselApp {
         }
         self.cpu_load_worker = Some(Self::spawn_cpu_worker(
             self.state.cpu.cpu_filter_active_only,
+            self.state.settings.language,
         ));
     }
 
-    pub(crate) fn spawn_cpu_worker(active_only: bool) -> CpuLoadWorker {
+    pub(crate) fn spawn_cpu_worker(active_only: bool, lang: crate::Language) -> CpuLoadWorker {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let result = Self::load_cpu_processes(active_only);
+            let result = Self::load_cpu_processes(active_only, lang);
             let _ = tx.send(result);
         });
         CpuLoadWorker { rx }
@@ -115,8 +116,7 @@ impl WinchiselApp {
             return;
         }
         self.state.cpu.cpu_reload_pending = true;
-        self.state.cpu.cpu_reload_ready_at =
-            Some(Instant::now() + Duration::from_millis(200));
+        self.state.cpu.cpu_reload_ready_at = Some(Instant::now() + Duration::from_millis(200));
     }
 
     pub(crate) fn queue_cpu_action(&mut self, action: CpuAction) {
@@ -147,19 +147,19 @@ impl WinchiselApp {
                         .unwrap_or_default();
                     return;
                 }
-                let _ = cpu_set_process_priority_class(pid, level);
+                let _ = cpu_set_process_priority_class(pid, level, self.state.settings.language);
                 self.request_cpu_reload();
             }
             CpuAction::SetCpuAlways(name, value) => {
-                let _ = cpu_set_cpu_always_registry(&name, value);
+                let _ = cpu_set_cpu_always_registry(&name, value, self.state.settings.language);
                 self.request_cpu_reload();
             }
             CpuAction::SetIoCurrent(pid, idx) => {
-                let _ = cpu_set_process_io_priority(pid, idx);
+                let _ = cpu_set_process_io_priority(pid, idx, self.state.settings.language);
                 self.request_cpu_reload();
             }
             CpuAction::SetIoAlways(name, value) => {
-                let _ = cpu_set_io_always_registry(&name, value);
+                let _ = cpu_set_io_always_registry(&name, value, self.state.settings.language);
                 self.request_cpu_reload();
             }
             CpuAction::SetAffinityCurrent(pid, mode) => {
@@ -226,7 +226,9 @@ impl WinchiselApp {
     }
 
     pub(crate) fn open_affinity_editor(&mut self, pid: i32, name: String) {
-        if let Ok((process_mask, system_mask)) = cpu_read_process_affinity_masks(pid) {
+        if let Ok((process_mask, system_mask)) =
+            cpu_read_process_affinity_masks(pid, self.state.settings.language)
+        {
             if let Ok(mut p) = CPU_PRIORITY_PENDING_PID.lock() {
                 *p = pid;
             }
@@ -244,7 +246,9 @@ impl WinchiselApp {
         if pid <= 0 {
             return;
         }
-        if let Ok((mut process_mask, system_mask)) = cpu_read_process_affinity_masks(pid) {
+        if let Ok((mut process_mask, system_mask)) =
+            cpu_read_process_affinity_masks(pid, self.state.settings.language)
+        {
             let bit = 1usize << (idx as usize);
             if (system_mask & bit) == 0 {
                 return;
@@ -271,7 +275,9 @@ impl WinchiselApp {
         if pid <= 0 {
             return;
         }
-        if let Ok((process_mask, system_mask)) = cpu_read_process_affinity_masks(pid) {
+        if let Ok((process_mask, system_mask)) =
+            cpu_read_process_affinity_masks(pid, self.state.settings.language)
+        {
             let mut next = (!process_mask) & system_mask;
             if next == 0 {
                 next = system_mask;
@@ -286,7 +292,9 @@ impl WinchiselApp {
         if pid <= 0 {
             return;
         }
-        if let Ok((_, system_mask)) = cpu_read_process_affinity_masks(pid) {
+        if let Ok((_, system_mask)) =
+            cpu_read_process_affinity_masks(pid, self.state.settings.language)
+        {
             self.state.cpu.cpu_affinity_dialog_mask = format!("{:X}", system_mask);
             self.state.cpu.cpu_affinity_cores =
                 cpu_build_affinity_core_rows(system_mask, system_mask);
@@ -298,7 +306,9 @@ impl WinchiselApp {
         if pid <= 0 {
             return;
         }
-        if let Ok((process_mask, _)) = cpu_read_process_affinity_masks(pid) {
+        if let Ok((process_mask, _)) =
+            cpu_read_process_affinity_masks(pid, self.state.settings.language)
+        {
             let target = usize::from_str_radix(&self.state.cpu.cpu_affinity_dialog_mask, 16)
                 .unwrap_or(process_mask);
             let _ = self.set_process_affinity_mask(pid, target);
@@ -317,13 +327,24 @@ impl WinchiselApp {
                 false,
                 pid as u32,
             )
-            .map_err(|e| format!("OpenProcess failed for PID {}: {}", pid, e))?;
+            .map_err(|e| {
+                format!(
+                    "{}: {}",
+                    crate::i18n::t(self.state.settings.language, "processes_openprocess_failed")
+                        .replacen("{}", &pid.to_string(), 1),
+                    e
+                )
+            })?;
             let ok = SetProcessAffinityMask(handle, mask).is_ok();
             let _ = windows::Win32::Foundation::CloseHandle(handle);
             if ok {
                 Ok(())
             } else {
-                Err(format!("SetProcessAffinityMask failed for PID {}", pid))
+                Err(crate::i18n::t(
+                    self.state.settings.language,
+                    "processes_set_affinity_failed",
+                )
+                .replacen("{}", &pid.to_string(), 1))
             }
         }
     }
@@ -339,16 +360,36 @@ impl WinchiselApp {
                 false,
                 pid as u32,
             )
-            .map_err(|e| format!("OpenProcess failed for PID {}: {}", pid, e))?;
+            .map_err(|e| {
+                format!(
+                    "{}: {}",
+                    crate::i18n::t(self.state.settings.language, "processes_openprocess_failed")
+                        .replacen("{}", &pid.to_string(), 1),
+                    e
+                )
+            })?;
 
             let mut process_mask: usize = 0;
             let mut system_mask: usize = 0;
-            GetProcessAffinityMask(handle, &mut process_mask, &mut system_mask)
-                .map_err(|e| format!("GetProcessAffinityMask failed for PID {}: {}", pid, e))?;
+            GetProcessAffinityMask(handle, &mut process_mask, &mut system_mask).map_err(|e| {
+                format!(
+                    "{}: {}",
+                    crate::i18n::t(
+                        self.state.settings.language,
+                        "processes_get_affinity_failed"
+                    )
+                    .replacen("{}", &pid.to_string(), 1),
+                    e
+                )
+            })?;
 
             if system_mask == 0 {
                 let _ = windows::Win32::Foundation::CloseHandle(handle);
-                return Err(format!("Invalid system affinity mask for PID {}", pid));
+                return Err(crate::i18n::t(
+                    self.state.settings.language,
+                    "processes_invalid_system_mask",
+                )
+                .replacen("{}", &pid.to_string(), 1));
             }
 
             let mut target_mask: usize = 0;
@@ -392,7 +433,11 @@ impl WinchiselApp {
                 }
                 _ => {
                     let _ = windows::Win32::Foundation::CloseHandle(handle);
-                    return Err("Invalid affinity mode".to_string());
+                    return Err(crate::i18n::t(
+                        self.state.settings.language,
+                        "processes_invalid_affinity_mode",
+                    )
+                    .to_string());
                 }
             }
 
@@ -406,7 +451,11 @@ impl WinchiselApp {
             if ok {
                 Ok(())
             } else {
-                Err(format!("SetProcessAffinityMask failed for PID {}", pid))
+                Err(crate::i18n::t(
+                    self.state.settings.language,
+                    "processes_set_affinity_failed",
+                )
+                .replacen("{}", &pid.to_string(), 1))
             }
         }
     }
@@ -430,7 +479,8 @@ impl WinchiselApp {
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
-                self.state.cpu.cpu_last_error = Some("Process scan failed".to_string());
+                self.state.cpu.cpu_last_error =
+                    Some(self.tr("processes_process_scan_failed").to_string());
                 self.state.cpu.cpu_reload_pending = false;
                 self.state.cpu.cpu_reload_ready_at = None;
                 self.cpu_load_worker = None;
@@ -438,7 +488,7 @@ impl WinchiselApp {
         }
     }
 
-    fn load_cpu_processes(active_only: bool) -> CpuLoadResult {
+    fn load_cpu_processes(active_only: bool, lang: crate::Language) -> CpuLoadResult {
         use sysinfo::{ProcessesToUpdate, System};
         let mut system = System::new_all();
         system.refresh_all();
@@ -458,9 +508,25 @@ impl WinchiselApp {
                 name: p.name().to_string_lossy().into_owned(),
                 name_lc: p.name().to_string_lossy().to_lowercase(),
                 cpu: format!("{:.1}%", p.cpu_usage()),
-                priority: cpu_get_process_priority_label(pid.as_u32() as i32),
-                affinity: cpu_get_process_affinity_label(pid.as_u32() as i32),
-                status: format!("{:?}", p.status()),
+                priority: cpu_get_process_priority_label(pid.as_u32() as i32, lang),
+                affinity: cpu_get_process_affinity_label(pid.as_u32() as i32, lang),
+                status: match format!("{:?}", p.status()).as_str() {
+                    "Run" => crate::i18n::t(lang, "processes_status_running").to_string(),
+                    "Sleep" => crate::i18n::t(lang, "processes_status_sleeping").to_string(),
+                    "Idle" => crate::i18n::t(lang, "processes_status_idle").to_string(),
+                    "Zombie" => crate::i18n::t(lang, "processes_status_zombie").to_string(),
+                    "Stop" => crate::i18n::t(lang, "processes_status_stopped").to_string(),
+                    "Tracing" => crate::i18n::t(lang, "processes_status_tracing").to_string(),
+                    "Dead" => crate::i18n::t(lang, "processes_status_dead").to_string(),
+                    "Wakekill" => crate::i18n::t(lang, "processes_status_wakekill").to_string(),
+                    "Waking" => crate::i18n::t(lang, "processes_status_waking").to_string(),
+                    "LockBlocked" => {
+                        crate::i18n::t(lang, "processes_status_lockblocked").to_string()
+                    }
+                    "Parked" => crate::i18n::t(lang, "processes_status_parked").to_string(),
+                    "Unknown" => crate::i18n::t(lang, "processes_status_unknown").to_string(),
+                    other => other.to_string(),
+                },
             })
             .collect();
         let rows_tree = Self::build_cpu_tree_rows(&rows, active_only);
@@ -533,7 +599,7 @@ impl WinchiselApp {
     }
 
     fn sort_cpu_pids(
-        pids: &mut Vec<i32>,
+        pids: &mut [i32],
         by_pid: &HashMap<i32, CpuProcessRow>,
         sort_column: CpuSortColumn,
         ascending: bool,
@@ -549,9 +615,15 @@ impl WinchiselApp {
                 CpuSortColumn::Cpu => Self::cpu_value(ra)
                     .partial_cmp(&Self::cpu_value(rb))
                     .unwrap_or(std::cmp::Ordering::Equal),
-                CpuSortColumn::Priority => ra.map(|r| r.priority.as_str()).cmp(&rb.map(|r| r.priority.as_str())),
-                CpuSortColumn::Affinity => ra.map(|r| r.affinity.as_str()).cmp(&rb.map(|r| r.affinity.as_str())),
-                CpuSortColumn::Status => ra.map(|r| r.status.as_str()).cmp(&rb.map(|r| r.status.as_str())),
+                CpuSortColumn::Priority => ra
+                    .map(|r| r.priority.as_str())
+                    .cmp(&rb.map(|r| r.priority.as_str())),
+                CpuSortColumn::Affinity => ra
+                    .map(|r| r.affinity.as_str())
+                    .cmp(&rb.map(|r| r.affinity.as_str())),
+                CpuSortColumn::Status => ra
+                    .map(|r| r.status.as_str())
+                    .cmp(&rb.map(|r| r.status.as_str())),
             };
             if ascending { ord } else { ord.reverse() }
         });
@@ -575,7 +647,9 @@ impl WinchiselApp {
             path.remove(&pid);
             return;
         };
-        if let Some(set) = active_set && !set.contains(&pid) {
+        if let Some(set) = active_set
+            && !set.contains(&pid)
+        {
             path.remove(&pid);
             return;
         }
@@ -608,7 +682,7 @@ impl WinchiselApp {
         path.remove(&pid);
     }
 
-fn compute_active_cpu_set(
+    fn compute_active_cpu_set(
         by_pid: &HashMap<i32, CpuProcessRow>,
         children: &HashMap<i32, Vec<i32>>,
     ) -> HashSet<i32> {
@@ -639,8 +713,8 @@ fn compute_active_cpu_set(
                 }
             }
         }
-    active
-}
+        active
+    }
 
     fn cpu_value(row: Option<&CpuProcessRow>) -> f32 {
         row.and_then(|r| r.cpu.trim_end_matches('%').parse::<f32>().ok())
@@ -648,15 +722,58 @@ fn compute_active_cpu_set(
     }
 
     pub(crate) fn render_processes_tab(&mut self, ui: &mut egui::Ui) {
+        let title = self.tr("processes_title").to_string();
+        let subtitle = self.tr("processes_subtitle").to_string();
+        let refresh = self.tr("processes_refresh").to_string();
+        let active_only_text = self.tr("processes_active_only").to_string();
+        let refreshing = self.tr("processes_refreshing").to_string();
+        let waiting = self.tr("processes_waiting_first").to_string();
+        let reload_queued = self.tr("processes_reload_queued").to_string();
+        let pid = self.tr("processes_pid").to_string();
+        let name = self.tr("processes_name").to_string();
+        let cpu = self.tr("processes_cpu").to_string();
+        let priority = self.tr("processes_priority").to_string();
+        let affinity = self.tr("processes_affinity").to_string();
+        let status = self.tr("processes_status").to_string();
+        let collapse = self.tr("processes_collapse_tree").to_string();
+        let expand = self.tr("processes_expand_tree").to_string();
+        let cpu_priority = self.tr("processes_cpu_priority").to_string();
+        let current = self.tr("processes_current").to_string();
+        let always = self.tr("processes_always").to_string();
+        let low = self.tr("processes_priority_low").to_string();
+        let idle = self.tr("processes_priority_idle").to_string();
+        let below_normal = self.tr("processes_priority_below_normal").to_string();
+        let normal = self.tr("processes_priority_normal").to_string();
+        let above_normal = self.tr("processes_priority_above_normal").to_string();
+        let high = self.tr("processes_priority_high").to_string();
+        let realtime = self.tr("processes_priority_realtime").to_string();
+        let background = self.tr("processes_priority_background").to_string();
+        let always_below = self.tr("processes_priority_always_below").to_string();
+        let always_above = self.tr("processes_priority_always_above").to_string();
+        let io_priority = self.tr("processes_io_priority").to_string();
+        let affinity_menu = self.tr("processes_affinity_menu").to_string();
+        let open_editor = self.tr("processes_open_editor").to_string();
+        let all_cores = self.tr("processes_all_cores").to_string();
+        let selected_process = self.tr("processes_selected").to_string();
+        let realtime_title = self.tr("processes_realtime_title").to_string();
+        let realtime_warn = self.tr("processes_realtime_warn").to_string();
+        let cancel = self.tr("processes_cancel").to_string();
+        let confirm = self.tr("processes_confirm").to_string();
+        let affinity_title = self.tr("processes_affinity_title").to_string();
+        let affinity_mask = self.tr("processes_affinity_mask").to_string();
+        let invert = self.tr("processes_invert").to_string();
+        let clear = self.tr("processes_clear").to_string();
+        let close = self.tr("processes_close").to_string();
+        let apply = self.tr("processes_apply").to_string();
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                ui.heading("Processes");
-                ui.label("Inspect processes, affinity and priority settings.");
+                ui.heading(title);
+                ui.label(subtitle);
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let loading = self.cpu_load_worker.is_some();
-                let button = egui::Button::new("Refresh")
+                let button = egui::Button::new(refresh)
                     .fill(egui::Color32::from_rgb(35, 88, 55))
                     .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(72, 145, 92)));
                 let response = ui.add_sized([120.0, 34.0], button);
@@ -675,9 +792,17 @@ fn compute_active_cpu_set(
         });
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            ui.label(format!("Visible: {}", self.state.cpu.cpu_visible_count));
+            ui.label(format!(
+                "{} {}",
+                self.tr("processes_visible"),
+                self.state.cpu.cpu_visible_count
+            ));
             ui.separator();
-            ui.label(format!("Total CPU: {}", self.state.cpu.cpu_total_usage));
+            ui.label(format!(
+                "{} {}",
+                self.tr("processes_total_cpu"),
+                self.state.cpu.cpu_total_usage
+            ));
             ui.separator();
             let mut active_only = self.state.cpu.cpu_filter_active_only;
             ui.horizontal(|ui| {
@@ -690,11 +815,11 @@ fn compute_active_cpu_set(
                     ui.ctx().request_repaint();
                 }
                 let label = if active_only {
-                    egui::RichText::new("Active only")
+                    egui::RichText::new(active_only_text.clone())
                         .strong()
                         .color(egui::Color32::from_rgb(96, 181, 103))
                 } else {
-                    egui::RichText::new("Active only")
+                    egui::RichText::new(active_only_text.clone())
                         .color(egui::Color32::from_rgb(210, 80, 80))
                 };
                 ui.label(label);
@@ -703,286 +828,274 @@ fn compute_active_cpu_set(
             if self.cpu_load_worker.is_some() {
                 ui.add(egui::Spinner::new().size(16.0));
                 ui.add_space(6.0);
-                ui.colored_label(
-                    egui::Color32::from_rgb(149, 194, 255),
-                    "Refreshing process list...",
-                );
+                ui.colored_label(egui::Color32::from_rgb(149, 194, 255), refreshing);
             } else if let Some(err) = self.state.cpu.cpu_last_error.as_ref() {
                 ui.colored_label(egui::Color32::from_rgb(210, 80, 80), err);
             } else if let Some(last) = self.state.cpu.cpu_last_refresh {
                 let elapsed = last.elapsed();
-                ui.label(format!("Last refresh: {}s ago", elapsed.as_secs()));
+                ui.label(self.tr("processes_last_refresh").replacen(
+                    "{}",
+                    &elapsed.as_secs().to_string(),
+                    1,
+                ));
             } else {
-                ui.label("Waiting for first refresh...");
+                ui.label(waiting);
             }
             if self.state.cpu.cpu_reload_pending {
                 ui.separator();
-                ui.label("Reload queued");
+                ui.label(reload_queued);
             }
         });
 
         ui.add_space(10.0);
 
         TableBuilder::new(ui)
-                    .striped(true)
-                    .resizable(true)
-                    .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-                    .column(Column::exact(64.0))
-                    .column(Column::remainder())
-                    .column(Column::exact(64.0))
-                    .column(Column::exact(64.0))
-                    .column(Column::exact(92.0))
-                    .column(Column::exact(72.0))
-                    .header(22.0, |mut header| {
-                        let (sort_column, ascending) = Self::cpu_sort_state();
-                        let mut header_button =
-                            |ui: &mut egui::Ui, label: &str, column: CpuSortColumn| {
-                            let mut text = label.to_string();
-                            if sort_column == column {
-                                text.push_str(if ascending { " ↑" } else { " ↓" });
-                            }
-                            if ui.button(text).clicked() {
-                                Self::set_cpu_sort(column);
-                                self.rebuild_cpu_visible_rows();
-                            }
-                        };
-                        header.col(|ui| header_button(ui, "PID", CpuSortColumn::Pid));
-                        header.col(|ui| header_button(ui, "Name", CpuSortColumn::Name));
-                        header.col(|ui| header_button(ui, "CPU %", CpuSortColumn::Cpu));
-                        header.col(|ui| header_button(ui, "Priority", CpuSortColumn::Priority));
-                        header.col(|ui| header_button(ui, "Affinity", CpuSortColumn::Affinity));
-                        header.col(|ui| header_button(ui, "Status", CpuSortColumn::Status));
-                    })
-                    .body(|body| {
-                        body.rows(26.0, self.state.cpu.cpu_processes.len(), |mut row| {
-                            let idx = row.index();
-                            let proc_row = self.state.cpu.cpu_processes[idx].clone();
-                            let selected = self.state.cpu.cpu_selected_pid == proc_row.pid;
-                            let pending_action: std::cell::RefCell<Option<CpuAction>> =
-                                std::cell::RefCell::new(None);
-                            let mut name_response: Option<egui::Response> = None;
-                            let row_menu = |ui: &mut egui::Ui| {
-                                if proc_row.has_children
-                                    && ui
-                                        .button(if proc_row.expanded {
-                                            "Collapse tree"
-                                        } else {
-                                            "Expand tree"
-                                        })
-                                        .clicked()
+            .striped(true)
+            .resizable(true)
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+            .column(Column::exact(64.0))
+            .column(Column::remainder())
+            .column(Column::exact(64.0))
+            .column(Column::exact(64.0))
+            .column(Column::exact(92.0))
+            .column(Column::exact(72.0))
+            .header(22.0, |mut header| {
+                let (sort_column, ascending) = Self::cpu_sort_state();
+                let mut header_button = |ui: &mut egui::Ui, label: &str, column: CpuSortColumn| {
+                    let mut text = label.to_string();
+                    if sort_column == column {
+                        text.push_str(if ascending { " ▲" } else { " ▼" });
+                    }
+                    if ui.button(text).clicked() {
+                        Self::set_cpu_sort(column);
+                        self.rebuild_cpu_visible_rows();
+                    }
+                };
+                header.col(|ui| header_button(ui, &pid, CpuSortColumn::Pid));
+                header.col(|ui| header_button(ui, &name, CpuSortColumn::Name));
+                header.col(|ui| header_button(ui, &cpu, CpuSortColumn::Cpu));
+                header.col(|ui| header_button(ui, &priority, CpuSortColumn::Priority));
+                header.col(|ui| header_button(ui, &affinity, CpuSortColumn::Affinity));
+                header.col(|ui| header_button(ui, &status, CpuSortColumn::Status));
+            })
+            .body(|body| {
+                body.rows(26.0, self.state.cpu.cpu_processes.len(), |mut row| {
+                    let idx = row.index();
+                    let proc_row = self.state.cpu.cpu_processes[idx].clone();
+                    let selected = self.state.cpu.cpu_selected_pid == proc_row.pid;
+                    let pending_action: std::cell::RefCell<Option<CpuAction>> =
+                        std::cell::RefCell::new(None);
+                    let mut name_response: Option<egui::Response> = None;
+                    let row_menu = |ui: &mut egui::Ui| {
+                        if proc_row.has_children
+                            && ui
+                                .button(if proc_row.expanded {
+                                    collapse.clone()
+                                } else {
+                                    expand.clone()
+                                })
+                                .clicked()
+                        {
+                            *pending_action.borrow_mut() =
+                                Some(CpuAction::ToggleTree(proc_row.pid));
+                            ui.close();
+                        }
+                        if proc_row.has_children {
+                            ui.separator();
+                        }
+                        ui.menu_button(cpu_priority.clone(), |ui| {
+                            ui.menu_button(current.clone(), |ui| {
+                                for (level, label) in [
+                                    (4, high.as_str()),
+                                    (3, above_normal.as_str()),
+                                    (2, normal.as_str()),
+                                    (1, below_normal.as_str()),
+                                    (6, background.as_str()),
+                                    (0, idle.as_str()),
+                                ] {
+                                    if ui.button(label).clicked() {
+                                        *pending_action.borrow_mut() =
+                                            Some(CpuAction::SetCpuCurrent(proc_row.pid, level));
+                                        ui.close();
+                                    }
+                                }
+                            });
+                            ui.menu_button(always.clone(), |ui| {
+                                for (value, label) in [
+                                    (1, idle.as_str()),
+                                    (5, always_below.as_str()),
+                                    (2, normal.as_str()),
+                                    (6, always_above.as_str()),
+                                    (3, high.as_str()),
+                                    (4, realtime.as_str()),
+                                ] {
+                                    if ui.button(label).clicked() {
+                                        *pending_action.borrow_mut() = Some(
+                                            CpuAction::SetCpuAlways(proc_row.name.clone(), value),
+                                        );
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        });
+                        ui.menu_button(io_priority.clone(), |ui| {
+                            ui.menu_button(current.clone(), |ui| {
+                                if ui.button(low.as_str()).clicked() {
+                                    *pending_action.borrow_mut() =
+                                        Some(CpuAction::SetIoCurrent(proc_row.pid, 0));
+                                    ui.close();
+                                }
+                                if ui.button(normal.as_str()).clicked() {
+                                    *pending_action.borrow_mut() =
+                                        Some(CpuAction::SetIoCurrent(proc_row.pid, 1));
+                                    ui.close();
+                                }
+                            });
+                            ui.menu_button(always.clone(), |ui| {
+                                for (idx, label) in [(0, low.as_str()), (1, normal.as_str())] {
+                                    if ui.button(label).clicked() {
+                                        *pending_action.borrow_mut() = Some(
+                                            CpuAction::SetIoAlways(proc_row.name.clone(), idx),
+                                        );
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        });
+                        ui.menu_button(affinity_menu.clone(), |ui| {
+                            ui.menu_button(current.clone(), |ui| {
+                                if ui.button(open_editor.clone()).clicked() {
+                                    *pending_action.borrow_mut() = Some(CpuAction::OpenAffinity(
+                                        proc_row.pid,
+                                        proc_row.name.clone(),
+                                    ));
+                                    ui.close();
+                                }
+                                if ui.button(all_cores.clone()).clicked() {
+                                    *pending_action.borrow_mut() =
+                                        Some(CpuAction::SetAffinityCurrent(proc_row.pid, 0));
+                                    ui.close();
+                                }
+                            });
+                        });
+                    };
+
+                    row.col(|ui| {
+                        ui.horizontal(|ui| {
+                            if proc_row.has_children {
+                                let icon = if proc_row.expanded { ">" } else { "v" };
+                                if ui
+                                    .add(
+                                        egui::Button::new(egui::RichText::new(icon).size(11.0))
+                                            .frame(false),
+                                    )
+                                    .clicked()
                                 {
                                     *pending_action.borrow_mut() =
                                         Some(CpuAction::ToggleTree(proc_row.pid));
-                                    ui.close();
                                 }
-                                if proc_row.has_children {
-                                    ui.separator();
-                                }
-                                ui.menu_button("CPU Priority", |ui| {
-                                    ui.menu_button("Current", |ui| {
-                                        for (level, label) in [
-                                            (4, "High: 13"),
-                                            (3, "Above Normal: 10"),
-                                            (2, "Normal: 8"),
-                                            (1, "Below Normal: 6"),
-                                            (6, "Background: 4 (Low I/O and CPU)"),
-                                            (0, "Idle: 4"),
-                                        ] {
-                                            if ui.button(label).clicked() {
-                                                *pending_action.borrow_mut() =
-                                                    Some(CpuAction::SetCpuCurrent(
-                                                        proc_row.pid,
-                                                        level,
-                                                    ));
-                                                ui.close();
-                                            }
-                                        }
-                                    });
-                                    ui.menu_button("Always", |ui| {
-                                        for (value, label) in [
-                                            (1, "Idle"),
-                                            (5, "Below"),
-                                            (2, "Normal"),
-                                            (6, "Above"),
-                                            (3, "High"),
-                                            (4, "Realtime"),
-                                        ] {
-                                            if ui.button(label).clicked() {
-                                                *pending_action.borrow_mut() =
-                                                    Some(CpuAction::SetCpuAlways(
-                                                        proc_row.name.clone(),
-                                                        value,
-                                                    ));
-                                                ui.close();
-                                            }
-                                        }
-                                    });
-                                });
-                                ui.menu_button("I/O Priority", |ui| {
-                                    ui.menu_button("Current", |ui| {
-                                        if ui.button("Low").clicked() {
-                                            *pending_action.borrow_mut() =
-                                                Some(CpuAction::SetIoCurrent(proc_row.pid, 0));
-                                            ui.close();
-                                        }
-                                        if ui.button("Normal").clicked() {
-                                            *pending_action.borrow_mut() =
-                                                Some(CpuAction::SetIoCurrent(proc_row.pid, 1));
-                                            ui.close();
-                                        }
-                                    });
-                                    ui.menu_button("Always", |ui| {
-                                        for (idx, label) in [(0, "Low"), (1, "Normal")] {
-                                            if ui.button(label).clicked() {
-                                                *pending_action.borrow_mut() =
-                                                    Some(CpuAction::SetIoAlways(
-                                                        proc_row.name.clone(),
-                                                        idx,
-                                                    ));
-                                                ui.close();
-                                            }
-                                        }
-                                    });
-                                });
-                                ui.menu_button("Affinity", |ui| {
-                                    ui.menu_button("Current", |ui| {
-                                        if ui.button("Open editor").clicked() {
-                                            *pending_action.borrow_mut() =
-                                                Some(CpuAction::OpenAffinity(
-                                                    proc_row.pid,
-                                                    proc_row.name.clone(),
-                                                ));
-                                            ui.close();
-                                        }
-                                        if ui.button("All cores").clicked() {
-                                            *pending_action.borrow_mut() =
-                                                Some(CpuAction::SetAffinityCurrent(
-                                                    proc_row.pid,
-                                                    0,
-                                                ));
-                                            ui.close();
-                                        }
-                                    });
-                                });
-                            };
-
-                            row.col(|ui| {
-                                ui.horizontal(|ui| {
-                                    if proc_row.has_children {
-                                        let icon = if proc_row.expanded { ">" } else { "v" };
-                                        if ui
-                                            .add(
-                                                egui::Button::new(
-                                                    egui::RichText::new(icon).size(11.0),
-                                                )
-                                                .frame(false),
-                                            )
-                                            .clicked()
-                                        {
-                                            *pending_action.borrow_mut() =
-                                                Some(CpuAction::ToggleTree(proc_row.pid));
-                                        }
-                                    } else {
-                                        ui.add_space(18.0);
-                                    }
-                                    ui.label(proc_row.pid.to_string());
-                                });
-                            });
-                            row.col(|ui| {
-                                ui.horizontal(|ui| {
-                                    ui.add_space((proc_row.depth as f32) * 14.0);
-                                    let response = ui.selectable_label(selected, &proc_row.name);
-                                    if response.clicked() {
-                                        self.state.cpu.cpu_selected_pid = proc_row.pid;
-                                        self.state.cpu.cpu_selected_name = proc_row.name.clone();
-                                    }
-                                    if response.secondary_clicked() {
-                                        self.state.cpu.cpu_selected_pid = proc_row.pid;
-                                        self.state.cpu.cpu_selected_name = proc_row.name.clone();
-                                    }
-                                    name_response = Some(response);
-                                });
-                            });
-                            row.col(|ui| {
-                                ui.add_sized(
-                                    [ui.available_width(), 24.0],
-                                    egui::Label::new(proc_row.cpu.clone())
-                                        .truncate()
-                                        .halign(egui::Align::Center),
-                                );
-                            });
-                            row.col(|ui| {
-                                ui.add_sized(
-                                    [ui.available_width(), 24.0],
-                                    egui::Label::new(proc_row.priority.clone())
-                                        .truncate()
-                                        .halign(egui::Align::Center),
-                                );
-                            });
-                            row.col(|ui| {
-                                ui.add_sized(
-                                    [ui.available_width(), 24.0],
-                                    egui::Label::new(proc_row.affinity.clone())
-                                        .truncate()
-                                        .halign(egui::Align::Center),
-                                );
-                            });
-                            row.col(|ui| {
-                                ui.add_sized(
-                                    [ui.available_width(), 24.0],
-                                    egui::Label::new(proc_row.status.clone())
-                                        .truncate()
-                                        .halign(egui::Align::Center),
-                                );
-                            });
-                            if let Some(name_response) = name_response.as_ref() {
-                                name_response.context_menu(|ui| row_menu(ui));
+                            } else {
+                                ui.add_space(18.0);
                             }
-                            let row_response = row.response();
-                            row_response.context_menu(|ui| row_menu(ui));
-                            if let Some(action) = pending_action.borrow_mut().take() {
-                                self.queue_cpu_action(action);
-                            }
+                            ui.label(proc_row.pid.to_string());
                         });
                     });
-                self.process_cpu_actions();
-                if self.state.cpu.cpu_selected_pid > 0 {
-                    ui.add_space(12.0);
-                    Self::card_frame().show(ui, |ui| {
+                    row.col(|ui| {
                         ui.horizontal(|ui| {
-                            ui.vertical(|ui| {
-                                ui.heading("Selected Process");
-                                ui.label(format!(
-                                    "{} (PID {})",
-                                    self.state.cpu.cpu_selected_name,
-                                    self.state.cpu.cpu_selected_pid
-                                ));
-                            });
+                            ui.add_space((proc_row.depth as f32) * 14.0);
+                            let response = ui.selectable_label(selected, &proc_row.name);
+                            if response.clicked() {
+                                self.state.cpu.cpu_selected_pid = proc_row.pid;
+                                self.state.cpu.cpu_selected_name = proc_row.name.clone();
+                            }
+                            if response.secondary_clicked() {
+                                self.state.cpu.cpu_selected_pid = proc_row.pid;
+                                self.state.cpu.cpu_selected_name = proc_row.name.clone();
+                            }
+                            name_response = Some(response);
                         });
-                        ui.add_space(8.0);
                     });
-                }
+                    row.col(|ui| {
+                        ui.add_sized(
+                            [ui.available_width(), 24.0],
+                            egui::Label::new(proc_row.cpu.clone())
+                                .truncate()
+                                .halign(egui::Align::Center),
+                        );
+                    });
+                    row.col(|ui| {
+                        ui.add_sized(
+                            [ui.available_width(), 24.0],
+                            egui::Label::new(proc_row.priority.clone())
+                                .truncate()
+                                .halign(egui::Align::Center),
+                        );
+                    });
+                    row.col(|ui| {
+                        ui.add_sized(
+                            [ui.available_width(), 24.0],
+                            egui::Label::new(proc_row.affinity.clone())
+                                .truncate()
+                                .halign(egui::Align::Center),
+                        );
+                    });
+                    row.col(|ui| {
+                        ui.add_sized(
+                            [ui.available_width(), 24.0],
+                            egui::Label::new(proc_row.status.clone())
+                                .truncate()
+                                .halign(egui::Align::Center),
+                        );
+                    });
+                    if let Some(name_response) = name_response.as_ref() {
+                        name_response.context_menu(|ui| row_menu(ui));
+                    }
+                    let row_response = row.response();
+                    row_response.context_menu(|ui| row_menu(ui));
+                    if let Some(action) = pending_action.borrow_mut().take() {
+                        self.queue_cpu_action(action);
+                    }
+                });
+            });
+        self.process_cpu_actions();
+        if self.state.cpu.cpu_selected_pid > 0 {
+            ui.add_space(12.0);
+            Self::card_frame().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.heading(selected_process);
+                        ui.label(format!(
+                            "{} (PID {})",
+                            self.state.cpu.cpu_selected_name, self.state.cpu.cpu_selected_pid
+                        ));
+                    });
+                });
+                ui.add_space(8.0);
+            });
+        }
         if self.state.cpu.cpu_realtime_confirm_visible {
-            egui::Window::new("Set Realtime Priority?")
+            egui::Window::new(realtime_title)
                 .collapsible(false)
                 .resizable(false)
                 .default_width(460.0)
                 .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
                 .show(ui.ctx(), |ui| {
-                    ui.label(
-                        "Realtime can freeze Windows responsiveness. Continue only if you understand the risk.",
-                    );
+                    ui.label(realtime_warn);
                     ui.add_space(12.0);
                     ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
+                        if ui.button(cancel.clone()).clicked() {
                             self.state.cpu.cpu_realtime_confirm_visible = false;
                             self.state.cpu.cpu_realtime_pending_pid = -1;
                             self.state.cpu.cpu_realtime_pending_name.clear();
                         }
-                        if ui.button("Confirm").clicked() {
+                        if ui.button(confirm.clone()).clicked() {
                             let pid = self.state.cpu.cpu_realtime_pending_pid;
                             if pid > 0 {
-                                let _ = cpu_set_process_priority_class(pid, 5);
+                                let _ = cpu_set_process_priority_class(
+                                    pid,
+                                    5,
+                                    self.state.settings.language,
+                                );
                                 self.request_cpu_reload();
                             }
                             self.state.cpu.cpu_realtime_confirm_visible = false;
@@ -1002,8 +1115,10 @@ fn compute_active_cpu_set(
             let max_width = ui.ctx().content_rect().width() * 0.95;
             let max_height = ui.ctx().content_rect().height() * 0.90;
             egui::Window::new(format!(
-                "CPU Affinity - {} (PID {})",
-                self.state.cpu.cpu_affinity_dialog_name, self.state.cpu.cpu_affinity_dialog_pid
+                "{} - {} (PID {})",
+                affinity_title,
+                self.state.cpu.cpu_affinity_dialog_name,
+                self.state.cpu.cpu_affinity_dialog_pid
             ))
             .collapsible(false)
             .resizable(false)
@@ -1012,8 +1127,8 @@ fn compute_active_cpu_set(
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ui.ctx(), |ui| {
                 ui.label(format!(
-                    "Affinity bitmask (hex): {}",
-                    self.state.cpu.cpu_affinity_dialog_mask
+                    "{}{}",
+                    affinity_mask, self.state.cpu.cpu_affinity_dialog_mask
                 ));
                 ui.add_space(10.0);
                 egui::ScrollArea::vertical()
@@ -1041,17 +1156,17 @@ fn compute_active_cpu_set(
                     });
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
-                    if ui.button("Invert").clicked() {
+                    if ui.button(invert.clone()).clicked() {
                         self.invert_cpu_affinity_selection();
                     }
-                    if ui.button("Clear").clicked() {
+                    if ui.button(clear.clone()).clicked() {
                         self.clear_cpu_affinity_selection();
                     }
                     ui.separator();
-                    if ui.button("Close").clicked() {
+                    if ui.button(close.clone()).clicked() {
                         self.state.cpu.cpu_affinity_dialog_visible = false;
                     }
-                    if ui.button("Apply").clicked() {
+                    if ui.button(apply.clone()).clicked() {
                         self.apply_cpu_affinity_selection();
                     }
                 });
@@ -1060,7 +1175,7 @@ fn compute_active_cpu_set(
     }
 }
 
-fn cpu_get_process_priority_label(pid: i32) -> String {
+fn cpu_get_process_priority_label(pid: i32, lang: crate::Language) -> String {
     use windows::Win32::System::Threading::{
         ABOVE_NORMAL_PRIORITY_CLASS, BELOW_NORMAL_PRIORITY_CLASS, GetPriorityClass,
         HIGH_PRIORITY_CLASS, IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, OpenProcess,
@@ -1069,23 +1184,35 @@ fn cpu_get_process_priority_label(pid: i32) -> String {
     unsafe {
         let handle = match OpenProcess(PROCESS_QUERY_INFORMATION, false, pid as u32) {
             Ok(h) => h,
-            Err(_) => return "Unknown".to_string(),
+            Err(_) => return crate::i18n::t(lang, "processes_priority_unknown").to_string(),
         };
         let cls = GetPriorityClass(handle);
         let _ = windows::Win32::Foundation::CloseHandle(handle);
         match cls {
-            c if c == IDLE_PRIORITY_CLASS.0 => "Idle".to_string(),
-            c if c == BELOW_NORMAL_PRIORITY_CLASS.0 => "Below Normal".to_string(),
-            c if c == NORMAL_PRIORITY_CLASS.0 => "Normal".to_string(),
-            c if c == ABOVE_NORMAL_PRIORITY_CLASS.0 => "Above Normal".to_string(),
-            c if c == HIGH_PRIORITY_CLASS.0 => "High".to_string(),
-            c if c == REALTIME_PRIORITY_CLASS.0 => "Realtime".to_string(),
-            _ => "Unknown".to_string(),
+            c if c == IDLE_PRIORITY_CLASS.0 => {
+                crate::i18n::t(lang, "processes_priority_idle").to_string()
+            }
+            c if c == BELOW_NORMAL_PRIORITY_CLASS.0 => {
+                crate::i18n::t(lang, "processes_priority_below_normal").to_string()
+            }
+            c if c == NORMAL_PRIORITY_CLASS.0 => {
+                crate::i18n::t(lang, "processes_priority_normal").to_string()
+            }
+            c if c == ABOVE_NORMAL_PRIORITY_CLASS.0 => {
+                crate::i18n::t(lang, "processes_priority_above_normal").to_string()
+            }
+            c if c == HIGH_PRIORITY_CLASS.0 => {
+                crate::i18n::t(lang, "processes_priority_high").to_string()
+            }
+            c if c == REALTIME_PRIORITY_CLASS.0 => {
+                crate::i18n::t(lang, "processes_priority_realtime").to_string()
+            }
+            _ => crate::i18n::t(lang, "processes_priority_unknown").to_string(),
         }
     }
 }
 
-fn cpu_get_process_affinity_label(pid: i32) -> String {
+fn cpu_get_process_affinity_label(pid: i32, lang: crate::Language) -> String {
     use windows::Win32::System::Threading::{
         GetProcessAffinityMask, OpenProcess, PROCESS_QUERY_INFORMATION,
     };
@@ -1102,10 +1229,10 @@ fn cpu_get_process_affinity_label(pid: i32) -> String {
             return "-".to_string();
         }
         if process_mask == system_mask {
-            return "All cores".to_string();
+            return crate::i18n::t(lang, "processes_all_cores").to_string();
         }
         if process_mask == 0 {
-            return "Unknown".to_string();
+            return crate::i18n::t(lang, "processes_priority_unknown").to_string();
         }
 
         let mut parts: Vec<String> = Vec::new();
@@ -1141,24 +1268,56 @@ fn cpu_get_process_affinity_label(pid: i32) -> String {
             }
         }
 
-        format!("CPU {}", parts.join(","))
+        format!(
+            "{} {}",
+            crate::i18n::t(lang, "processes_affinity_prefix"),
+            parts.join(",")
+        )
     }
 }
 
-fn cpu_read_process_affinity_masks(pid: i32) -> Result<(usize, usize), String> {
+fn cpu_read_process_affinity_masks(
+    pid: i32,
+    lang: crate::Language,
+) -> Result<(usize, usize), String> {
     use windows::Win32::System::Threading::{
         GetProcessAffinityMask, OpenProcess, PROCESS_QUERY_INFORMATION,
     };
     unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_INFORMATION, false, pid as u32)
-            .map_err(|e| format!("OpenProcess failed for PID {}: {}", pid, e))?;
+        let handle = OpenProcess(PROCESS_QUERY_INFORMATION, false, pid as u32).map_err(|e| {
+            format!(
+                "{}: {}",
+                crate::i18n::t(lang, "processes_openprocess_failed").replacen(
+                    "{}",
+                    &pid.to_string(),
+                    1
+                ),
+                e
+            )
+        })?;
         let mut process_mask: usize = 0;
         let mut system_mask: usize = 0;
         let res = GetProcessAffinityMask(handle, &mut process_mask, &mut system_mask);
         let _ = windows::Win32::Foundation::CloseHandle(handle);
-        res.map_err(|e| format!("GetProcessAffinityMask failed for PID {}: {}", pid, e))?;
+        res.map_err(|e| {
+            format!(
+                "{}: {}",
+                crate::i18n::t(lang, "processes_get_affinity_failed").replacen(
+                    "{}",
+                    &pid.to_string(),
+                    1
+                ),
+                e
+            )
+        })?;
         if system_mask == 0 {
-            return Err(format!("Invalid system affinity mask for PID {}", pid));
+            return Err(
+                crate::i18n::t(lang, "processes_invalid_system_mask").replacen(
+                    "{}",
+                    &pid.to_string(),
+                    1,
+                ),
+            );
         }
         Ok((process_mask & system_mask, system_mask))
     }
@@ -1247,7 +1406,11 @@ fn cpu_logical_processor_efficiency_classes() -> HashMap<usize, u8> {
     }
 }
 
-fn cpu_set_cpu_always_registry(process_name: &str, value: u32) -> Result<(), String> {
+fn cpu_set_cpu_always_registry(
+    process_name: &str,
+    value: u32,
+    lang: crate::Language,
+) -> Result<(), String> {
     let exe_name = if process_name.to_ascii_lowercase().ends_with(".exe") {
         process_name.to_string()
     } else {
@@ -1258,22 +1421,45 @@ fn cpu_set_cpu_always_registry(process_name: &str, value: u32) -> Result<(), Str
         "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\{}\\PerfOptions",
         exe_name
     );
-    let (key, _) = hklm
-        .create_subkey(path)
-        .map_err(|e| format!("Failed to create/open PerfOptions key: {}", e))?;
+    let (key, _) = hklm.create_subkey(path).map_err(|e| {
+        format!(
+            "{}: {}",
+            crate::i18n::t(lang, "processes_perfoptions_open"),
+            e
+        )
+    })?;
     if value == 7 {
-        key.set_value("CpuPriorityClass", &4u32)
-            .map_err(|e| format!("Failed to write CpuPriorityClass: {}", e))?;
-        key.set_value("IoPriority", &1u32)
-            .map_err(|e| format!("Failed to write IoPriority: {}", e))?;
+        key.set_value("CpuPriorityClass", &4u32).map_err(|e| {
+            format!(
+                "{}: {}",
+                crate::i18n::t(lang, "processes_perfoptions_write_cpu"),
+                e
+            )
+        })?;
+        key.set_value("IoPriority", &1u32).map_err(|e| {
+            format!(
+                "{}: {}",
+                crate::i18n::t(lang, "processes_perfoptions_write_io"),
+                e
+            )
+        })?;
     } else {
-        key.set_value("CpuPriorityClass", &value)
-            .map_err(|e| format!("Failed to write CpuPriorityClass: {}", e))?;
+        key.set_value("CpuPriorityClass", &value).map_err(|e| {
+            format!(
+                "{}: {}",
+                crate::i18n::t(lang, "processes_perfoptions_write_cpu"),
+                e
+            )
+        })?;
     }
     Ok(())
 }
 
-fn cpu_set_io_always_registry(process_name: &str, value: u32) -> Result<(), String> {
+fn cpu_set_io_always_registry(
+    process_name: &str,
+    value: u32,
+    lang: crate::Language,
+) -> Result<(), String> {
     let exe_name = if process_name.to_ascii_lowercase().ends_with(".exe") {
         process_name.to_string()
     } else {
@@ -1284,15 +1470,28 @@ fn cpu_set_io_always_registry(process_name: &str, value: u32) -> Result<(), Stri
         "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\{}\\PerfOptions",
         exe_name
     );
-    let (key, _) = hklm
-        .create_subkey(path)
-        .map_err(|e| format!("Failed to create/open PerfOptions key: {}", e))?;
-    key.set_value("IoPriority", &value)
-        .map_err(|e| format!("Failed to write IoPriority: {}", e))?;
+    let (key, _) = hklm.create_subkey(path).map_err(|e| {
+        format!(
+            "{}: {}",
+            crate::i18n::t(lang, "processes_perfoptions_open"),
+            e
+        )
+    })?;
+    key.set_value("IoPriority", &value).map_err(|e| {
+        format!(
+            "{}: {}",
+            crate::i18n::t(lang, "processes_perfoptions_write_io"),
+            e
+        )
+    })?;
     Ok(())
 }
 
-fn cpu_set_process_priority_class(pid: i32, level: i32) -> Result<(), String> {
+fn cpu_set_process_priority_class(
+    pid: i32,
+    level: i32,
+    lang: crate::Language,
+) -> Result<(), String> {
     use windows::Win32::System::Threading::{
         ABOVE_NORMAL_PRIORITY_CLASS, BELOW_NORMAL_PRIORITY_CLASS, GetPriorityClass,
         HIGH_PRIORITY_CLASS, IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, OpenProcess,
@@ -1307,7 +1506,7 @@ fn cpu_set_process_priority_class(pid: i32, level: i32) -> Result<(), String> {
         4 => HIGH_PRIORITY_CLASS,
         5 => REALTIME_PRIORITY_CLASS,
         6 => PROCESS_MODE_BACKGROUND_BEGIN,
-        _ => return Err("Invalid priority level".to_string()),
+        _ => return Err(crate::i18n::t(lang, "processes_invalid_priority_level").to_string()),
     };
     unsafe {
         let handle = OpenProcess(
@@ -1315,19 +1514,35 @@ fn cpu_set_process_priority_class(pid: i32, level: i32) -> Result<(), String> {
             false,
             pid as u32,
         )
-        .map_err(|e| format!("OpenProcess failed for PID {}: {}", pid, e))?;
+        .map_err(|e| {
+            format!(
+                "{}: {}",
+                crate::i18n::t(lang, "processes_openprocess_failed").replacen(
+                    "{}",
+                    &pid.to_string(),
+                    1
+                ),
+                e
+            )
+        })?;
         let _ = GetPriorityClass(handle);
         let ok = SetPriorityClass(handle, class).is_ok();
         let _ = windows::Win32::Foundation::CloseHandle(handle);
         if ok {
             Ok(())
         } else {
-            Err(format!("SetPriorityClass failed for PID {}", pid))
+            Err(
+                crate::i18n::t(lang, "processes_set_priority_failed").replacen(
+                    "{}",
+                    &pid.to_string(),
+                    1,
+                ),
+            )
         }
     }
 }
 
-fn cpu_set_process_io_priority(pid: i32, idx: i32) -> Result<(), String> {
+fn cpu_set_process_io_priority(pid: i32, idx: i32, lang: crate::Language) -> Result<(), String> {
     use windows::Win32::System::Threading::{
         OpenProcess, PROCESS_INFORMATION_CLASS, PROCESS_QUERY_INFORMATION, PROCESS_SET_INFORMATION,
         SetProcessInformation,
@@ -1339,7 +1554,17 @@ fn cpu_set_process_io_priority(pid: i32, idx: i32) -> Result<(), String> {
             false,
             pid as u32,
         )
-        .map_err(|e| format!("OpenProcess failed for PID {}: {}", pid, e))?;
+        .map_err(|e| {
+            format!(
+                "{}: {}",
+                crate::i18n::t(lang, "processes_openprocess_failed").replacen(
+                    "{}",
+                    &pid.to_string(),
+                    1
+                ),
+                e
+            )
+        })?;
         let cls = PROCESS_INFORMATION_CLASS(33);
         let ok = SetProcessInformation(
             handle,
@@ -1352,7 +1577,7 @@ fn cpu_set_process_io_priority(pid: i32, idx: i32) -> Result<(), String> {
         if ok {
             Ok(())
         } else {
-            Err(format!("SetProcessInformation(I/O) failed for PID {}", pid))
+            Err(crate::i18n::t(lang, "processes_set_io_failed").replacen("{}", &pid.to_string(), 1))
         }
     }
 }

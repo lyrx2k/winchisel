@@ -1,4 +1,5 @@
 use super::{HomeState, WinchiselApp};
+use crate::{Language, i18n};
 struct HomeStaticSnapshot {
     computer_name: String,
     os_version: String,
@@ -11,9 +12,8 @@ struct HomeStaticSnapshot {
 }
 
 impl WinchiselApp {
-    pub(crate) fn build_home_state() -> HomeState {
+    pub(crate) fn build_home_state(lang: Language) -> HomeState {
         use sysinfo::System;
-
         let mut system = System::new();
         system.refresh_memory();
         system.refresh_cpu_usage();
@@ -22,23 +22,33 @@ impl WinchiselApp {
                 .cpus()
                 .first()
                 .map(|cpu| cpu.brand().to_string())
-                .unwrap_or_else(|| "Unknown CPU".to_string());
+                .unwrap_or_else(|| i18n::t(lang, "home_unknown_cpu").to_string());
             let cpu_cores = System::physical_core_count()
                 .or_else(|| Some(system.cpus().len()))
                 .unwrap_or(0);
-            let (gpu_name, _, _) = Self::read_gpu_info();
+            let (gpu_name, _, _) = Self::read_gpu_info(lang);
             let (_system_model, _system_manufacturer, bios_version, bios_date) =
-                Self::read_system_info();
+                Self::read_system_info(lang);
             HomeStaticSnapshot {
-                computer_name: System::host_name().unwrap_or_else(|| "Unknown PC".to_string()),
-                os_version: System::os_version().unwrap_or_else(|| "Unknown OS".to_string()),
+                computer_name: System::host_name()
+                    .unwrap_or_else(|| i18n::t(lang, "home_unknown_pc").to_string()),
+                os_version: System::os_version()
+                    .unwrap_or_else(|| i18n::t(lang, "home_unknown_os").to_string()),
                 kernel_version: System::kernel_version()
-                    .unwrap_or_else(|| "Unknown kernel".to_string()),
+                    .unwrap_or_else(|| i18n::t(lang, "home_unknown_kernel").to_string()),
                 bios_version,
                 bios_date,
                 cpu_brand,
-                cpu_cores: format!("{} cores", cpu_cores),
-                gpu_name,
+                cpu_cores: i18n::t(lang, "home_cores_suffix").replacen(
+                    "{}",
+                    &cpu_cores.to_string(),
+                    1,
+                ),
+                gpu_name: if gpu_name.is_empty() {
+                    i18n::t(lang, "home_unknown_gpu").to_string()
+                } else {
+                    gpu_name
+                },
             }
         };
         let total_memory_gb = system.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
@@ -66,10 +76,26 @@ impl WinchiselApp {
             cpu_brand: snapshot.cpu_brand,
             cpu_cores: snapshot.cpu_cores,
             gpu_name: snapshot.gpu_name,
-            memory_total: format!("{total_memory_gb:.1} GB total"),
-            memory_used: format!("{used_memory_gb:.1} GB used"),
-            storage_total: format!("{total_disk_gb:.2} TB total"),
-            storage_used: format!("{used_disk_gb:.2} TB used"),
+            memory_total: i18n::t(lang, "home_gb_total").replacen(
+                "{:.1}",
+                &format!("{total_memory_gb:.1}"),
+                1,
+            ),
+            memory_used: i18n::t(lang, "home_gb_used").replacen(
+                "{:.1}",
+                &format!("{used_memory_gb:.1}"),
+                1,
+            ),
+            storage_total: i18n::t(lang, "home_tb_total").replacen(
+                "{:.2}",
+                &format!("{total_disk_gb:.2}"),
+                1,
+            ),
+            storage_used: i18n::t(lang, "home_tb_used").replacen(
+                "{:.2}",
+                &format!("{used_disk_gb:.2}"),
+                1,
+            ),
             cpu_usage,
             uptime: format!(
                 "{}d {:02}h {:02}m",
@@ -80,14 +106,20 @@ impl WinchiselApp {
         }
     }
 
-    fn read_gpu_info() -> (String, Option<String>, String) {
+    fn read_gpu_info(lang: Language) -> (String, Option<String>, String) {
         use windows::Win32::Graphics::Dxgi::{
             CreateDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, IDXGIFactory1,
         };
         unsafe {
             let factory: IDXGIFactory1 = match CreateDXGIFactory1() {
                 Ok(factory) => factory,
-                Err(_) => return ("Unknown GPU".to_string(), None, "Unknown VRAM".to_string()),
+                Err(_) => {
+                    return (
+                        i18n::t(lang, "home_unknown_gpu").to_string(),
+                        None,
+                        i18n::t(lang, "home_unknown_vram").to_string(),
+                    );
+                }
             };
             for idx in 0..16 {
                 let adapter = match factory.EnumAdapters1(idx) {
@@ -108,7 +140,7 @@ impl WinchiselApp {
                 let memory_gb = desc.DedicatedVideoMemory as f64 / 1024.0 / 1024.0 / 1024.0;
                 return (
                     if name.is_empty() {
-                        "Unknown GPU".to_string()
+                        i18n::t(lang, "home_unknown_gpu").to_string()
                     } else {
                         name
                     },
@@ -117,10 +149,14 @@ impl WinchiselApp {
                 );
             }
         }
-        ("Unknown GPU".to_string(), None, "Unknown VRAM".to_string())
+        (
+            i18n::t(lang, "home_unknown_gpu").to_string(),
+            None,
+            i18n::t(lang, "home_unknown_vram").to_string(),
+        )
     }
 
-    fn read_system_info() -> (String, String, String, String) {
+    fn read_system_info(lang: Language) -> (String, String, String, String) {
         let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
         let bios_key = hklm.open_subkey("HARDWARE\\DESCRIPTION\\System\\BIOS");
         let model = bios_key
@@ -128,23 +164,23 @@ impl WinchiselApp {
             .ok()
             .and_then(|k| k.get_value::<String, _>("SystemProductName").ok())
             .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| "Unknown Model".to_string());
+            .unwrap_or_else(|| i18n::t(lang, "home_unknown_model").to_string());
         let manufacturer = bios_key
             .as_ref()
             .ok()
             .and_then(|k| k.get_value::<String, _>("SystemManufacturer").ok())
             .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| "Unknown Vendor".to_string());
+            .unwrap_or_else(|| i18n::t(lang, "home_unknown_vendor").to_string());
         let bios_version = bios_key
             .as_ref()
             .ok()
             .and_then(|k| k.get_value::<String, _>("BIOSVersion").ok())
-            .unwrap_or_else(|| "Unknown BIOS".to_string());
+            .unwrap_or_else(|| i18n::t(lang, "home_unknown_bios").to_string());
         let bios_date = bios_key
             .as_ref()
             .ok()
             .and_then(|k| k.get_value::<String, _>("BIOSReleaseDate").ok())
-            .unwrap_or_else(|| "Unknown Date".to_string());
+            .unwrap_or_else(|| i18n::t(lang, "home_unknown_date").to_string());
         (model, manufacturer, bios_version, bios_date)
     }
 }

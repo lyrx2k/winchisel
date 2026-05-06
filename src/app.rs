@@ -2,6 +2,7 @@ use crate::{
     AppSettings,
     app_definitions::get_all_apps,
     download_definitions::{DownloadApp, DownloadCategory, get_all_downloads},
+    i18n::t,
     save_app_settings,
 };
 use eframe::egui;
@@ -51,8 +52,10 @@ struct DownloadsState {
     downloads_items: Vec<DownloadApp>,
     downloads_selected: Vec<bool>,
     downloads_installed: Vec<bool>,
+    downloads_view_mode: usize,
     downloads_loading: bool,
     downloads_filter_cache_query: String,
+    downloads_filter_cache_view_mode: usize,
     downloads_filter_cache_all: Vec<usize>,
     downloads_filter_cache_categories: Vec<Vec<usize>>,
 }
@@ -171,6 +174,10 @@ pub struct WinchiselApp {
 }
 
 impl WinchiselApp {
+    fn tr(&self, key: &str) -> &'static str {
+        t(self.state.settings.language, key)
+    }
+
     fn sidebar_tab_label(icon: &str, label: &str) -> String {
         if let Ok(icon) = try_icon(Pack::Lucide, icon, Style::Regular, Size::Regular) {
             let glyph = char::from_u32(icon.codepoint).unwrap_or('?');
@@ -181,13 +188,14 @@ impl WinchiselApp {
     }
 
     pub fn new(settings: AppSettings, is_admin: bool) -> Self {
-        let debloater_items = get_all_apps();
+        let debloater_items = get_all_apps(settings.language);
         let (debloater_load_worker, debloater_loading) =
             Self::spawn_debloater_worker(debloater_items.clone());
-        let download_items = get_all_downloads();
+        let download_items = get_all_downloads(settings.language);
         let (downloads_load_worker, downloads_loading) =
             Self::spawn_downloads_worker(download_items.clone());
-        let (performance_load_worker, performance_loaded) = Self::spawn_performance_worker("");
+        let (performance_load_worker, performance_loaded) =
+            Self::spawn_performance_worker("", settings.language);
         Self {
             state: AppState {
                 last_saved_settings: settings.clone(),
@@ -207,7 +215,7 @@ impl WinchiselApp {
                 settings: settings.clone(),
                 is_admin,
                 active_tab: Tab::Home,
-                update_status: "Ready".to_string(),
+                update_status: t(settings.language, "update_ready").to_string(),
                 update_check_loading: false,
                 update_check_started: false,
                 downloads: DownloadsState {
@@ -215,8 +223,10 @@ impl WinchiselApp {
                     downloads_items: download_items,
                     downloads_selected: Vec::new(),
                     downloads_installed: Vec::new(),
+                    downloads_view_mode: 0,
                     downloads_loading,
                     downloads_filter_cache_query: String::new(),
+                    downloads_filter_cache_view_mode: usize::MAX,
                     downloads_filter_cache_all: Vec::new(),
                     downloads_filter_cache_categories: vec![Vec::new(); 16],
                 },
@@ -226,7 +236,7 @@ impl WinchiselApp {
                     performance_groups: Default::default(),
                     performance_quick_action_index: 0,
                 },
-                home: Self::build_home_state(),
+                home: Self::build_home_state(settings.language),
                 cpu: processes_tab::CpuState {
                     cpu_filter_active_only: true,
                     cpu_visible_count: 0,
@@ -302,7 +312,8 @@ impl WinchiselApp {
     fn sync_settings(&mut self) {
         let settings_changed = self.state.settings.check_updates_on_startup
             != self.settings_save_snapshot.check_updates_on_startup
-            || self.state.settings.show_console != self.settings_save_snapshot.show_console;
+            || self.state.settings.show_console != self.settings_save_snapshot.show_console
+            || self.state.settings.language != self.settings_save_snapshot.language;
 
         if settings_changed {
             self.settings_save_snapshot = self.state.settings.clone();
@@ -317,12 +328,79 @@ impl WinchiselApp {
             save_app_settings(&self.state.settings);
             crate::set_console_visibility(self.state.settings.show_console);
             self.state.last_saved_settings = self.state.settings.clone();
-            self.state.update_status = "Settings saved".to_string();
+            self.state.update_status = self.tr("settings_saved").to_string();
             self.settings_save_due_at = None;
             self.toasts
-                .info("Settings saved")
+                .info(self.tr("settings_saved"))
                 .duration(Duration::from_secs_f64(2.5));
         }
+    }
+
+    fn apply_language_change(&mut self) {
+        let lang = self.state.settings.language;
+
+        self.state.home = Self::build_home_state(lang);
+        self.state.update_status = t(lang, "update_ready").to_string();
+
+        self.state.debloater.debloater_items = get_all_apps(lang);
+        self.state.debloater.debloater_selected =
+            vec![false; self.state.debloater.debloater_items.len()];
+        self.state.debloater.debloater_installed =
+            vec![false; self.state.debloater.debloater_items.len()];
+        self.state.debloater.debloater_filter_cache_query.clear();
+        self.state.debloater.debloater_filter_cache_tab = usize::MAX;
+        self.state.debloater.debloater_filter_cache_view_mode = usize::MAX;
+        self.state.debloater.debloater_filter_cache_all.clear();
+        self.debloater_cache_ready = false;
+        self.state.debloater.debloater_loading = false;
+        self.debloater_load_worker = None;
+        self.start_debloater_load();
+
+        self.state.downloads.downloads_items = get_all_downloads(lang);
+        self.state.downloads.downloads_selected =
+            vec![false; self.state.downloads.downloads_items.len()];
+        self.state.downloads.downloads_installed =
+            vec![false; self.state.downloads.downloads_items.len()];
+        self.state.downloads.downloads_filter_cache_query.clear();
+        self.state.downloads.downloads_filter_cache_all.clear();
+        for bucket in &mut self.state.downloads.downloads_filter_cache_categories {
+            bucket.clear();
+        }
+        self.downloads_cache_ready = false;
+        self.state.downloads.downloads_loading = false;
+        self.downloads_load_worker = None;
+        self.start_downloads_load();
+
+        self.state.performance.performance_loaded = false;
+        self.performance_load_worker = None;
+        self.start_performance_load();
+
+        self.cpu_load_worker = None;
+        self.state.cpu.cpu_visible_count = 0;
+        self.state.cpu.cpu_total_usage = "0.0%".to_string();
+        self.state.cpu.cpu_processes_all.clear();
+        self.state.cpu.cpu_processes.clear();
+        self.state.cpu.cpu_selected_pid = -1;
+        self.state.cpu.cpu_selected_name.clear();
+        self.state.cpu.cpu_last_refresh = None;
+        self.state.cpu.cpu_last_error = None;
+        self.state.cpu.cpu_reload_pending = false;
+        self.state.cpu.cpu_reload_ready_at = None;
+        self.start_cpu_load();
+
+        self.latency_load_worker = None;
+        self.state.latency.latency_loading = false;
+        self.state.latency.latency_completion_pending = false;
+        self.state.latency.latency_progress = 0;
+        self.state.latency.latency_progress_display = 0.0;
+        self.state.latency.latency_status.clear();
+        self.state.latency.latency_lines.clear();
+        self.state.latency.latency_pending_lines.clear();
+        self.state.latency.latency_tick_next_at = None;
+        self.state.latency.latency_completion_ready_at = None;
+
+        self.restore_point_load_worker = None;
+        self.restore_point_dialog = None;
     }
 
     fn ensure_download_selection(&mut self) {
@@ -519,24 +597,24 @@ foreach ($p in $paths) {
             .any(|installed| installed.contains(&name_lower) || name_lower.contains(installed))
     }
 
-    fn category_label_download(category: &DownloadCategory) -> &'static str {
+    fn category_label_download(&self, category: &DownloadCategory) -> String {
         match category {
-            DownloadCategory::Browsers => "Browsers",
-            DownloadCategory::DocumentViewers => "Document Viewers",
-            DownloadCategory::MessagingEmailCalendar => "Messaging / Email / Calendar",
-            DownloadCategory::OnlineStorageBackup => "Online Storage / Backup",
-            DownloadCategory::Multimedia => "Multimedia",
-            DownloadCategory::Imaging => "Imaging",
-            DownloadCategory::CustomizationUtilities => "Customization Utilities",
-            DownloadCategory::Gaming => "Gaming",
-            DownloadCategory::Compression => "Compression",
-            DownloadCategory::FileDiskManagement => "File / Disk Management",
-            DownloadCategory::RemoteAccess => "Remote Access",
-            DownloadCategory::OpticalDiscTools => "Optical Disc Tools",
-            DownloadCategory::OtherUtilities => "Other Utilities",
-            DownloadCategory::PrivacySecurity => "Privacy / Security",
-            DownloadCategory::DevelopmentApps => "Development Apps",
-            DownloadCategory::RuntimesDependencies => "Runtimes / Dependencies",
+            DownloadCategory::Browsers => self.tr("download_category_0").to_string(),
+            DownloadCategory::DocumentViewers => self.tr("download_category_1").to_string(),
+            DownloadCategory::MessagingEmailCalendar => self.tr("download_category_2").to_string(),
+            DownloadCategory::OnlineStorageBackup => self.tr("download_category_3").to_string(),
+            DownloadCategory::Multimedia => self.tr("download_category_4").to_string(),
+            DownloadCategory::Imaging => self.tr("download_category_5").to_string(),
+            DownloadCategory::CustomizationUtilities => self.tr("download_category_6").to_string(),
+            DownloadCategory::Gaming => self.tr("download_category_7").to_string(),
+            DownloadCategory::Compression => self.tr("download_category_8").to_string(),
+            DownloadCategory::FileDiskManagement => self.tr("download_category_9").to_string(),
+            DownloadCategory::RemoteAccess => self.tr("download_category_10").to_string(),
+            DownloadCategory::OpticalDiscTools => self.tr("download_category_11").to_string(),
+            DownloadCategory::OtherUtilities => self.tr("download_category_12").to_string(),
+            DownloadCategory::PrivacySecurity => self.tr("download_category_13").to_string(),
+            DownloadCategory::DevelopmentApps => self.tr("download_category_14").to_string(),
+            DownloadCategory::RuntimesDependencies => self.tr("download_category_15").to_string(),
         }
     }
 }
@@ -595,7 +673,7 @@ impl eframe::App for WinchiselApp {
                 .map(|last| last.elapsed() >= Duration::from_secs(5))
                 .unwrap_or(true);
             if refresh_due {
-                self.state.home = Self::build_home_state();
+                self.state.home = Self::build_home_state(self.state.settings.language);
                 self.state.home_last_refresh = Some(Instant::now());
                 repaint_after = Some(repaint_after.map_or(Duration::from_millis(100), |cur| {
                     cur.min(Duration::from_millis(100))
@@ -653,9 +731,9 @@ impl eframe::App for WinchiselApp {
                             );
                         }
                         let admin = if self.state.is_admin {
-                            "Administrator"
+                            self.tr("status_admin")
                         } else {
-                            "Standard"
+                            self.tr("status_standard")
                         };
                         ui.colored_label(egui::Color32::from_rgb(96, 181, 103), admin);
                         ui.separator();
@@ -668,13 +746,18 @@ impl eframe::App for WinchiselApp {
                                     .color(egui::Color32::from_rgb(166, 166, 166)),
                             );
                         }
-                        let status_color = if self.state.update_status == "Up to date" {
-                            egui::Color32::from_rgb(96, 181, 103)
-                        } else if self.state.update_status.contains("Update available") {
-                            egui::Color32::from_rgb(226, 196, 84)
-                        } else {
-                            egui::Color32::from_rgb(166, 166, 166)
-                        };
+                        let status_color =
+                            if self.state.update_status == self.tr("update_up_to_date") {
+                                egui::Color32::from_rgb(96, 181, 103)
+                            } else if self
+                                .state
+                                .update_status
+                                .contains(self.tr("update_available_prefix"))
+                            {
+                                egui::Color32::from_rgb(226, 196, 84)
+                            } else {
+                                egui::Color32::from_rgb(166, 166, 166)
+                            };
                         ui.colored_label(status_color, &self.state.update_status);
                     });
                 });
@@ -683,9 +766,9 @@ impl eframe::App for WinchiselApp {
                         try_icon(Pack::Lucide, "refresh-cw", Style::Regular, Size::Regular)
                     {
                         let glyph = char::from_u32(icon.codepoint).unwrap_or('?');
-                        format!("{glyph}  Check Updates")
+                        format!("{glyph}  {}", self.tr("check_updates"))
                     } else {
-                        "Check Updates".to_string()
+                        self.tr("check_updates").to_string()
                     };
                     if ui
                         .add_sized(
@@ -694,7 +777,7 @@ impl eframe::App for WinchiselApp {
                                 .fill(egui::Color32::from_rgb(35, 54, 80))
                                 .stroke(egui::Stroke::new(
                                     1.0,
-                                    egui::Color32::from_rgb(84, 113, 158),
+                                    egui::Color32::from_rgb(10, 210, 254),
                                 )),
                         )
                         .clicked()
@@ -705,9 +788,9 @@ impl eframe::App for WinchiselApp {
                         try_icon(Pack::Lucide, "heart", Style::Regular, Size::Regular)
                     {
                         let glyph = char::from_u32(icon.codepoint).unwrap_or('?');
-                        format!("{glyph}  Donate")
+                        format!("{glyph}  {}", self.tr("donate"))
                     } else {
-                        "Donate".to_string()
+                        self.tr("donate").to_string()
                     };
                     if ui
                         .add_sized(
@@ -727,9 +810,9 @@ impl eframe::App for WinchiselApp {
                         try_icon(Pack::Lucide, "bug", Style::Regular, Size::Regular)
                     {
                         let glyph = char::from_u32(icon.codepoint).unwrap_or('?');
-                        format!("{glyph}  Bug Report")
+                        format!("{glyph}  {}", self.tr("bug_report"))
                     } else {
-                        "Bug Report".to_string()
+                        self.tr("bug_report").to_string()
                     };
                     if ui
                         .add_sized(
@@ -753,17 +836,24 @@ impl eframe::App for WinchiselApp {
             .resizable(false)
             .exact_size(228.0)
             .show_inside(ui, |ui| {
+                let tab_home = self.tr("home").to_string();
+                let tab_debloater = self.tr("debloater").to_string();
+                let tab_downloads = self.tr("downloads").to_string();
+                let tab_performance = self.tr("performance").to_string();
+                let tab_processes = self.tr("processes").to_string();
+                let tab_latency = self.tr("latency").to_string();
+                let tab_settings = self.tr("settings").to_string();
                 ui.add_space(10.0);
                 ui.vertical_centered(|ui| {
-                    ui.heading("Navigation");
-                    ui.label("Winchisel control center");
+                    ui.heading(self.tr("nav_title"));
+                    ui.label(self.tr("nav_subtitle"));
                 });
                 ui.add_space(16.0);
                 Self::tab_button(
                     ui,
                     &mut self.state.active_tab,
                     Tab::Home,
-                    &Self::sidebar_tab_label("house", "Home"),
+                    &Self::sidebar_tab_label("house", &tab_home),
                     false,
                 );
                 let performance_loading = WinchiselApp::performance_sidebar_loading(self);
@@ -771,42 +861,42 @@ impl eframe::App for WinchiselApp {
                     ui,
                     &mut self.state.active_tab,
                     Tab::Debloater,
-                    &Self::sidebar_tab_label("eraser", "Debloater"),
+                    &Self::sidebar_tab_label("eraser", &tab_debloater),
                     self.state.debloater.debloater_loading || self.debloater_load_worker.is_some(),
                 );
                 Self::tab_button(
                     ui,
                     &mut self.state.active_tab,
                     Tab::Downloads,
-                    &Self::sidebar_tab_label("download", "Apps & Downloads"),
+                    &Self::sidebar_tab_label("download", &tab_downloads),
                     self.state.downloads.downloads_loading || self.downloads_load_worker.is_some(),
                 );
                 Self::tab_button(
                     ui,
                     &mut self.state.active_tab,
                     Tab::Performance,
-                    &Self::sidebar_tab_label("gauge", "Performance"),
+                    &Self::sidebar_tab_label("gauge", &tab_performance),
                     performance_loading,
                 );
                 Self::tab_button(
                     ui,
                     &mut self.state.active_tab,
                     Tab::Processes,
-                    &Self::sidebar_tab_label("list-tree", "Processes"),
+                    &Self::sidebar_tab_label("list-tree", &tab_processes),
                     self.cpu_load_worker.is_some() && self.state.cpu.cpu_last_refresh.is_none(),
                 );
                 Self::tab_button(
                     ui,
                     &mut self.state.active_tab,
                     Tab::Latency,
-                    &Self::sidebar_tab_label("clock-3", "Latency"),
+                    &Self::sidebar_tab_label("clock-3", &tab_latency),
                     false,
                 );
                 Self::tab_button(
                     ui,
                     &mut self.state.active_tab,
                     Tab::Settings,
-                    &Self::sidebar_tab_label("settings-2", "Settings"),
+                    &Self::sidebar_tab_label("settings-2", &tab_settings),
                     false,
                 );
             });
@@ -829,14 +919,14 @@ impl eframe::App for WinchiselApp {
         self.show_debloater_dialog(ui.ctx());
 
         if let Some(DownloadAction::Install) = self.pending_download_action {
-            egui::Window::new("Confirm App Install")
+            egui::Window::new(self.tr("download_confirm_title"))
                 .collapsible(false)
                 .resizable(false)
                 .default_width(420.0)
                 .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
                 .show(ui.ctx(), |ui| {
                     let items = self.selected_download_items();
-                    ui.label("These apps and downloads will be installed:");
+                    ui.label(self.tr("download_confirm_desc"));
                     ui.add_space(8.0);
                     egui::ScrollArea::vertical()
                         .max_height(220.0)
@@ -847,11 +937,11 @@ impl eframe::App for WinchiselApp {
                         });
                     ui.add_space(12.0);
                     ui.horizontal(|ui| {
-                        if ui.button("Confirm Install").clicked() {
+                        if ui.button(self.tr("download_confirm_install")).clicked() {
                             self.pending_download_action = None;
                             self.start_download_install();
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.button(self.tr("download_cancel")).clicked() {
                             self.pending_download_action = None;
                         }
                     });

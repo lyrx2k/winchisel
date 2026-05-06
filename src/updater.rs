@@ -7,17 +7,17 @@ pub fn check_for_update() -> Result<Option<String>, String> {
     let mut response = ureq::get(&url)
         .header("User-Agent", "Winchisel-Updater")
         .call()
-        .map_err(|e| format!("Failed to check updates: {}", e))?;
+        .map_err(|_| "update_error_check_updates".to_string())?;
     let body = response
         .body_mut()
         .read_to_string()
-        .map_err(|e| format!("Failed to read response: {}", e))?;
+        .map_err(|_| "update_error_read_response".to_string())?;
     let json: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| format!("Failed to parse JSON: {}", e))?;
+        serde_json::from_str(&body).map_err(|_| "update_error_parse_json".to_string())?;
     let latest_tag = json
         .get("tag_name")
         .and_then(|v| v.as_str())
-        .ok_or("No tag_name in response".to_string())?;
+        .ok_or("update_error_no_tag_name".to_string())?;
     let current = format!("v{}", env!("CARGO_PKG_VERSION"));
     if is_newer(&current, latest_tag) {
         Ok(Some(latest_tag.to_string()))
@@ -35,24 +35,24 @@ pub fn download_and_install(tag: &str) -> Result<(), String> {
     let mut response = ureq::get(&url)
         .header("User-Agent", "Winchisel-Updater")
         .call()
-        .map_err(|e| format!("Failed to download update: {}", e))?;
+        .map_err(|_| "update_error_download".to_string())?;
 
     let temp_dir = std::env::temp_dir();
     let update_exe = temp_dir.join("Winchisel_update.exe");
 
-    let mut file = fs::File::create(&update_exe)
-        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+    let mut file =
+        fs::File::create(&update_exe).map_err(|_| "update_error_create_temp_file".to_string())?;
 
     let bytes = std::io::copy(&mut response.body_mut().as_reader(), &mut file)
-        .map_err(|e| format!("Failed to write update file: {}", e))?;
+        .map_err(|_| "update_error_write_update_file".to_string())?;
     drop(file);
 
     if bytes < 100_000 {
-        return Err(format!("Downloaded file is too small ({} bytes)", bytes));
+        return Err(format!("update_error_download_too_small:{}", bytes));
     }
 
     let current_exe = std::env::current_exe()
-        .map_err(|e| format!("Failed to resolve current executable: {}", e))?;
+        .map_err(|_| "update_error_resolve_current_exe".to_string())?;
 
     #[cfg(target_os = "windows")]
     {
@@ -68,13 +68,13 @@ pub fn download_and_install(tag: &str) -> Result<(), String> {
 
         let bat_path = temp_dir.join("Winchisel_update.bat");
         fs::write(&bat_path, bat.as_bytes())
-            .map_err(|e| format!("Failed to write update script: {}", e))?;
+            .map_err(|_| "update_error_write_update_script".to_string())?;
 
         std::process::Command::new("cmd")
             .args(["/c", bat_path.to_string_lossy().as_ref()])
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
-            .map_err(|e| format!("Failed to launch updater: {}", e))?;
+            .map_err(|_| "update_error_launch_updater".to_string())?;
     }
 
     std::process::exit(0);

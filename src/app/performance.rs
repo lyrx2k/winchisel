@@ -1,5 +1,5 @@
 use super::WinchiselApp;
-use crate::{GamingTweakRow, performance};
+use crate::{GamingTweakRow, i18n, performance};
 use eframe::egui;
 use iconflow::{Pack, Size, Style, try_icon};
 use std::sync::mpsc::Receiver;
@@ -38,11 +38,14 @@ impl WinchiselApp {
         app.performance_load_worker.is_some() || !app.state.performance.performance_loaded
     }
 
-    pub(crate) fn spawn_performance_worker(query: &str) -> (Option<PerformanceLoadWorker>, bool) {
+    pub(crate) fn spawn_performance_worker(
+        query: &str,
+        lang: crate::Language,
+    ) -> (Option<PerformanceLoadWorker>, bool) {
         let query = query.trim().to_string();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let groups = performance::reload_gaming_tweaks_filtered(&query);
+            let groups = performance::reload_gaming_tweaks_filtered(&query, lang);
             let _ = tx.send(PerformanceLoadResult { groups });
         });
         (Some(PerformanceLoadWorker { rx }), true)
@@ -52,11 +55,15 @@ impl WinchiselApp {
         if self.performance_load_worker.is_some() {
             return;
         }
-        self.state.performance.performance_groups =
-            performance::preview_gaming_tweaks(&self.state.performance.performance_query);
+        self.state.performance.performance_groups = performance::preview_gaming_tweaks(
+            &self.state.performance.performance_query,
+            self.state.settings.language,
+        );
         self.state.performance.performance_loaded = true;
-        let (worker, loading) =
-            Self::spawn_performance_worker(&self.state.performance.performance_query);
+        let (worker, loading) = Self::spawn_performance_worker(
+            &self.state.performance.performance_query,
+            self.state.settings.language,
+        );
         self.performance_load_worker = worker;
         self.state.performance.performance_loaded = loading;
     }
@@ -82,7 +89,7 @@ impl WinchiselApp {
     pub(crate) fn refresh_performance_groups(&mut self) {
         let query = self.state.performance.performance_query.trim();
         self.state.performance.performance_groups =
-            performance::reload_gaming_tweaks_filtered(query);
+            performance::reload_gaming_tweaks_filtered(query, self.state.settings.language);
         self.state.performance.performance_loaded = true;
         self.state.performance.performance_quick_action_index = 0;
     }
@@ -96,11 +103,24 @@ impl WinchiselApp {
         self.refresh_performance_groups();
     }
 
-    pub(crate) fn performance_group_label(group_idx: usize) -> &'static str {
-        performance::performance_group_labels()
-            .get(group_idx)
-            .copied()
-            .unwrap_or("Performance")
+    pub(crate) fn performance_group_label(
+        &self,
+        group_idx: usize,
+        lang: crate::Language,
+    ) -> &'static str {
+        match group_idx {
+            0 => i18n::t(lang, "performance_group_0"),
+            1 => i18n::t(lang, "performance_group_1"),
+            2 => i18n::t(lang, "performance_group_2"),
+            3 => i18n::t(lang, "performance_group_3"),
+            4 => i18n::t(lang, "performance_group_4"),
+            5 => i18n::t(lang, "performance_group_5"),
+            6 => i18n::t(lang, "performance_group_6"),
+            7 => i18n::t(lang, "performance_group_7"),
+            8 => i18n::t(lang, "performance_group_8"),
+            9 => i18n::t(lang, "performance_group_9"),
+            _ => self.tr("performance_title"),
+        }
     }
 
     pub(crate) fn render_performance_row(&mut self, ui: &mut egui::Ui, row: &GamingTweakRow) {
@@ -251,7 +271,11 @@ impl WinchiselApp {
                                             egui::Color32::from_rgb(136, 136, 136),
                                         )),
                                 )
-                                .on_hover_text(format!("Default: {}", row.default_label))
+                                .on_hover_text(format!(
+                                    "{}{}",
+                                    self.tr("performance_current_default"),
+                                    row.default_label
+                                ))
                                 .clicked()
                             {
                                 performance::apply_gaming_tweak_default_state(row.tweak_id);
@@ -278,7 +302,8 @@ impl WinchiselApp {
                                         )),
                                 )
                                 .on_hover_text(format!(
-                                    "Recommended: {}",
+                                    "{}{}",
+                                    self.tr("performance_current_recommended"),
                                     row.recommended_label
                                 ))
                                 .clicked()
@@ -293,18 +318,26 @@ impl WinchiselApp {
     }
 
     pub(crate) fn render_performance_tab(&mut self, ui: &mut egui::Ui) {
+        let perf_title = self.tr("performance_title").to_string();
+        let perf_subtitle = self.tr("performance_subtitle").to_string();
+        let perf_search = self.tr("performance_search").to_string();
+        let perf_quick = self.tr("performance_quick").to_string();
+        let perf_apply = self.tr("performance_apply_recommended").to_string();
+        let perf_reset = self.tr("performance_reset_defaults").to_string();
+        let perf_loading = self.tr("performance_loading").to_string();
+        let perf_empty = self.tr("performance_empty").to_string();
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.heading("Performance");
-                    ui.label("Gaming and Performance Tweaks");
+                    ui.heading(perf_title);
+                    ui.label(perf_subtitle);
                 });
                 ui.add_space(12.0);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let response = ui.add_sized(
                         [280.0, 30.0],
                         egui::TextEdit::singleline(&mut self.state.performance.performance_query)
-                            .hint_text("Search performance tweaks..."),
+                            .hint_text(perf_search),
                     );
                     if response.changed() {
                         self.refresh_performance_groups();
@@ -312,9 +345,9 @@ impl WinchiselApp {
                     ui.add_space(10.0);
                     let quick_index = self.state.performance.performance_quick_action_index;
                     let selected_text = match quick_index {
-                        1 => "Apply Recommended Settings",
-                        2 => "Reset to Windows Defaults",
-                        _ => "Quick Actions",
+                        1 => perf_apply.as_str(),
+                        2 => perf_reset.as_str(),
+                        _ => perf_quick.as_str(),
                     };
                     let mut chosen_index = quick_index;
                     ui.allocate_ui_with_layout(
@@ -327,9 +360,21 @@ impl WinchiselApp {
                                     .width(220.0)
                                     .selected_text(selected_text)
                                     .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut chosen_index, 0, "Quick Actions");
-                                    ui.selectable_value(&mut chosen_index, 1, "Apply Recommended Settings");
-                                    ui.selectable_value(&mut chosen_index, 2, "Reset to Windows Defaults");
+                                        ui.selectable_value(
+                                            &mut chosen_index,
+                                            0,
+                                            perf_quick.as_str(),
+                                        );
+                                        ui.selectable_value(
+                                            &mut chosen_index,
+                                            1,
+                                            perf_apply.as_str(),
+                                        );
+                                        ui.selectable_value(
+                                            &mut chosen_index,
+                                            2,
+                                            perf_reset.as_str(),
+                                        );
                                     });
                             });
                         },
@@ -349,7 +394,7 @@ impl WinchiselApp {
                 ui.vertical_centered(|ui| {
                     ui.add(egui::Spinner::new().size(28.0));
                     ui.add_space(10.0);
-                    ui.strong("Loading performance tweaks...");
+                    ui.strong(perf_loading);
                 });
                 ui.add_space(40.0);
             } else {
@@ -358,7 +403,7 @@ impl WinchiselApp {
 
                 let groups = self.state.performance.performance_groups.clone();
                 if groups.iter().all(|g| g.is_empty()) {
-                    ui.label("No performance tweaks to display.");
+                    ui.label(perf_empty);
                 } else {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false, false])
@@ -368,10 +413,13 @@ impl WinchiselApp {
                                     continue;
                                 }
                                 egui::CollapsingHeader::new(
-                                    egui::RichText::new(Self::performance_group_label(group_idx))
-                                        .strong()
-                                        .size(15.0)
-                                        .color(egui::Color32::from_rgb(149, 194, 255)),
+                                    egui::RichText::new(self.performance_group_label(
+                                        group_idx,
+                                        self.state.settings.language,
+                                    ))
+                                    .strong()
+                                    .size(15.0)
+                                    .color(egui::Color32::from_rgb(149, 194, 255)),
                                 )
                                 .id_salt(("performance_group", group_idx))
                                 .default_open(true)

@@ -58,7 +58,9 @@ impl WinchiselApp {
         }
     }
 
-    pub(crate) fn spawn_debloater_worker(items: Vec<AppItem>) -> (Option<DebloaterLoadWorker>, bool) {
+    pub(crate) fn spawn_debloater_worker(
+        items: Vec<AppItem>,
+    ) -> (Option<DebloaterLoadWorker>, bool) {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let installed_state = Self::get_debloater_installed_state();
@@ -111,9 +113,9 @@ impl WinchiselApp {
 
     fn category_label(category: &AppCategory) -> &'static str {
         match category {
-            AppCategory::WindowsApps => "Windows Apps",
-            AppCategory::Capabilities => "Capabilities",
-            AppCategory::OptionalFeatures => "Optional Features",
+            AppCategory::WindowsApps => "debloater_tab_0",
+            AppCategory::Capabilities => "debloater_tab_1",
+            AppCategory::OptionalFeatures => "debloater_tab_2",
         }
     }
 
@@ -169,7 +171,7 @@ impl WinchiselApp {
     pub(crate) fn run_debloater_action(&mut self, install: bool) {
         let items = self.selected_package_items();
         if items.is_empty() {
-            self.state.update_status = "Nothing selected".to_string();
+            self.state.update_status = self.tr("debloater_nothing_selected").to_string();
             return;
         }
 
@@ -246,9 +248,13 @@ impl WinchiselApp {
         }
 
         self.state.update_status = if install {
-            format!("Installed: {}  Failed: {}", ok, fail)
+            self.tr("debloater_result_install")
+                .replacen("{}", &ok.to_string(), 1)
+                .replacen("{}", &fail.to_string(), 1)
         } else {
-            format!("Removed: {}  Failed: {}", ok, fail)
+            self.tr("debloater_result_remove")
+                .replacen("{}", &ok.to_string(), 1)
+                .replacen("{}", &fail.to_string(), 1)
         };
         self.debloater_cache_ready = false;
         self.state.debloater.debloater_filter_cache_query.clear();
@@ -262,18 +268,35 @@ impl WinchiselApp {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(50));
         }
+        let title = self.tr("debloater_title").to_string();
+        let subtitle = self.tr("debloater_subtitle").to_string();
+        let refresh = self.tr("debloater_refresh").to_string();
+        let install_selected = self.tr("debloater_install_selected").to_string();
+        let remove_selected = self.tr("debloater_remove_selected").to_string();
+        let search = self.tr("debloater_search").to_string();
+        let loading = self.tr("debloater_loading").to_string();
+        let scanning = self.tr("debloater_scanning").to_string();
+        let none = self.tr("debloater_none").to_string();
+        let selected_label = self.tr("debloater_nothing_selected").to_string();
+        let all_items = self.tr("debloater_all_items").to_string();
+        let installed_only = self.tr("debloater_installed_only").to_string();
+        let not_installed_only = self.tr("debloater_not_installed_only").to_string();
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.heading("Debloater");
-                    ui.label("Remove or reinstall apps and Windows features.");
+                    ui.heading(title);
+                    ui.label(subtitle);
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                     ui.horizontal(|ui| {
-                        for (idx, label) in ["Windows Apps", "Capabilities", "Optional Features"]
-                            .iter()
-                            .enumerate()
-                            .rev()
+                        for (idx, label) in [
+                            self.tr("debloater_tab_0"),
+                            self.tr("debloater_tab_1"),
+                            self.tr("debloater_tab_2"),
+                        ]
+                        .iter()
+                        .enumerate()
+                        .rev()
                         {
                             let selected = self.state.debloater.debloater_tab == idx;
                             let fill = if selected {
@@ -310,10 +333,11 @@ impl WinchiselApp {
 
             ui.horizontal(|ui| {
                 if ui
-                    .add_sized([96.0, 34.0], egui::Button::new("Refresh"))
+                    .add_sized([96.0, 34.0], egui::Button::new(refresh))
                     .clicked()
                 {
-                    self.state.debloater.debloater_items = get_all_apps();
+                    self.state.debloater.debloater_items =
+                        get_all_apps(self.state.settings.language);
                     self.state.debloater.debloater_selected =
                         vec![false; self.state.debloater.debloater_items.len()];
                     self.state.debloater.debloater_installed =
@@ -329,26 +353,26 @@ impl WinchiselApp {
                 egui::ComboBox::from_id_salt("debloater_view_mode")
                     .width(190.0)
                     .selected_text(match self.state.debloater.debloater_view_mode {
-                        0 => "All items",
-                        1 => "Installed only",
-                        2 => "Not installed only",
-                        _ => "All items",
+                        0 => all_items.as_str(),
+                        1 => installed_only.as_str(),
+                        2 => not_installed_only.as_str(),
+                        _ => all_items.as_str(),
                     })
                     .show_ui(ui, |ui| {
                         ui.selectable_value(
                             &mut self.state.debloater.debloater_view_mode,
                             0,
-                            "All items",
+                            all_items.as_str(),
                         );
                         ui.selectable_value(
                             &mut self.state.debloater.debloater_view_mode,
                             1,
-                            "Installed only",
+                            installed_only.as_str(),
                         );
                         ui.selectable_value(
                             &mut self.state.debloater.debloater_view_mode,
                             2,
-                            "Not installed only",
+                            not_installed_only.as_str(),
                         );
                     });
                 if self.state.debloater.debloater_view_mode != previous_view_mode {
@@ -358,12 +382,12 @@ impl WinchiselApp {
                 }
                 ui.add_space(12.0);
                 let selected_count = self.selected_package_count();
-                ui.label(format!("{} selected", selected_count));
+                ui.label(format!("{} {}", selected_count, selected_label));
                 ui.add_space(12.0);
                 if ui
                     .add_enabled(
                         selected_count > 0,
-                        egui::Button::new("Install Selected")
+                        egui::Button::new(install_selected)
                             .min_size(egui::vec2(132.0, 34.0))
                             .fill(egui::Color32::from_rgb(35, 88, 55))
                             .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(72, 145, 92))),
@@ -375,7 +399,7 @@ impl WinchiselApp {
                 if ui
                     .add_enabled(
                         selected_count > 0,
-                        egui::Button::new("Remove Selected")
+                        egui::Button::new(remove_selected)
                             .min_size(egui::vec2(132.0, 34.0))
                             .fill(egui::Color32::from_rgb(100, 42, 42))
                             .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(168, 72, 72))),
@@ -388,7 +412,7 @@ impl WinchiselApp {
                     ui.add_sized(
                         [280.0, 30.0],
                         egui::TextEdit::singleline(&mut self.state.debloater.debloater_query)
-                            .hint_text("Search packages"),
+                            .hint_text(search),
                     );
                 });
             });
@@ -399,8 +423,8 @@ impl WinchiselApp {
                 ui.vertical_centered(|ui| {
                     ui.add(egui::Spinner::new().size(28.0));
                     ui.add_space(10.0);
-                    ui.strong("Loading packages...");
-                    ui.label("Scanning installed apps, capabilities and optional features.");
+                    ui.strong(loading);
+                    ui.label(scanning);
                 });
                 ui.add_space(56.0);
             } else {
@@ -410,13 +434,19 @@ impl WinchiselApp {
                 self.rebuild_debloater_filter_cache();
                 let visible_items = self.filtered_debloater_items();
                 if visible_items.is_empty() {
-                    ui.label("No packages to display.");
+                    ui.label(none);
                 } else {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
                             for idx in visible_items {
                                 let item = &self.state.debloater.debloater_items[idx];
+                                let meta = self.tr("debloater_meta").to_string();
+                                let installed_text = self.tr("debloater_installed").to_string();
+                                let not_installed_text =
+                                    self.tr("debloater_not_installed").to_string();
+                                let cannot_reinstall_text =
+                                    self.tr("debloater_cannot_reinstall").to_string();
                                 let selected = &mut self.state.debloater.debloater_selected[idx];
                                 let row_width = ui.available_width();
                                 let row_frame = if *selected {
@@ -459,12 +489,17 @@ impl WinchiselApp {
                                                 egui::Layout::top_down(egui::Align::Min),
                                                 |ui| {
                                                     ui.set_width(text_width);
-                                                    ui.label(&item.name).on_hover_text(format!(
-                                                        "Package: {}\nCategory: {}\nGroup: {}",
-                                                        item.package_name,
-                                                        Self::category_label(&item.category),
-                                                        item.group
-                                                    ));
+                                                    ui.label(&item.name).on_hover_text(
+                                                        meta.replacen("{}", &item.package_name, 1)
+                                                            .replacen(
+                                                                "{}",
+                                                                Self::category_label(
+                                                                    &item.category,
+                                                                ),
+                                                                1,
+                                                            )
+                                                            .replacen("{}", &item.group, 1),
+                                                    );
                                                     ui.add_space(2.0);
                                                     ui.label(&item.description);
                                                 },
@@ -492,14 +527,14 @@ impl WinchiselApp {
                                                                         egui::Color32::from_rgb(
                                                                             96, 181, 103,
                                                                         ),
-                                                                        "Installed",
+                                                                        &installed_text,
                                                                     );
                                                                 } else {
                                                                     ui.colored_label(
                                                                         egui::Color32::from_rgb(
                                                                             130, 130, 130,
                                                                         ),
-                                                                        "Not installed",
+                                                                        &not_installed_text,
                                                                     );
                                                                 }
                                                             },
@@ -514,7 +549,7 @@ impl WinchiselApp {
                                                                         egui::Color32::from_rgb(
                                                                             210, 80, 80,
                                                                         ),
-                                                                        "Cannot reinstall",
+                                                                        &cannot_reinstall_text,
                                                                     );
                                                                 },
                                                             );
@@ -557,8 +592,8 @@ impl WinchiselApp {
         };
 
         egui::Window::new(match action {
-            DebloaterAction::Install => "Confirm Installation",
-            DebloaterAction::Remove => "Confirm Removal",
+            DebloaterAction::Install => self.tr("debloater_confirm_install_title"),
+            DebloaterAction::Remove => self.tr("debloater_confirm_remove_title"),
         })
         .collapsible(false)
         .resizable(false)
@@ -567,8 +602,8 @@ impl WinchiselApp {
         .show(ctx, |ui| {
             let items = self.selected_package_items();
             ui.label(match action {
-                DebloaterAction::Install => "These apps will be installed:",
-                DebloaterAction::Remove => "These apps will be removed:",
+                DebloaterAction::Install => self.tr("debloater_confirm_install_desc"),
+                DebloaterAction::Remove => self.tr("debloater_confirm_remove_desc"),
             });
             ui.add_space(8.0);
             egui::ScrollArea::vertical()
@@ -581,14 +616,14 @@ impl WinchiselApp {
             ui.add_space(12.0);
             ui.horizontal(|ui| {
                 let ok_label = match action {
-                    DebloaterAction::Install => "Confirm Install",
-                    DebloaterAction::Remove => "Confirm Remove",
+                    DebloaterAction::Install => self.tr("debloater_confirm_install_btn"),
+                    DebloaterAction::Remove => self.tr("debloater_confirm_remove_btn"),
                 };
                 if ui.button(ok_label).clicked() {
                     self.pending_debloater_action = None;
                     self.run_debloater_action(matches!(action, DebloaterAction::Install));
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(self.tr("debloater_cancel")).clicked() {
                     self.pending_debloater_action = None;
                 }
             });
@@ -651,18 +686,14 @@ impl WinchiselApp {
                     })
                 })
             }
-            AppCategory::Capabilities => {
-                installed.capabilities.iter().any(|installed_name| {
-                    installed_name.contains(&item.package_name_lc)
-                        || item.package_name_lc.contains(installed_name)
-                })
-            }
-            AppCategory::OptionalFeatures => {
-                installed.features.iter().any(|installed_name| {
-                    installed_name.contains(&item.package_name_lc)
-                        || item.package_name_lc.contains(installed_name)
-                })
-            }
+            AppCategory::Capabilities => installed.capabilities.iter().any(|installed_name| {
+                installed_name.contains(&item.package_name_lc)
+                    || item.package_name_lc.contains(installed_name)
+            }),
+            AppCategory::OptionalFeatures => installed.features.iter().any(|installed_name| {
+                installed_name.contains(&item.package_name_lc)
+                    || item.package_name_lc.contains(installed_name)
+            }),
         }
     }
 }

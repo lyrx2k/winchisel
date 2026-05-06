@@ -33,18 +33,23 @@ impl WinchiselApp {
                 self.update_check_rx = None;
                 match result {
                     UpdateCheckResult::UpToDate => {
-                        self.state.update_status = "Up to date".to_string();
+                        self.state.update_status = self.tr("update_up_to_date").to_string();
                         self.toasts
-                            .info("Update check: already up to date")
+                            .info(self.tr("update_up_to_date"))
                             .duration(Duration::from_secs_f64(2.5));
                         if self.update_dialog_on_complete {
                             self.pending_update_dialog = Some(UpdateDialog::UpToDate);
                         }
                     }
                     UpdateCheckResult::UpdateAvailable(version) => {
-                        self.state.update_status = format!("Update available: {}", version);
+                        self.state.update_status =
+                            format!("{} {}", self.tr("update_available_prefix"), version);
                         self.toasts
-                            .warning(format!("Update available: {}", version))
+                            .warning(format!(
+                                "{} {}",
+                                self.tr("update_available_prefix"),
+                                version
+                            ))
                             .duration(Duration::from_secs_f64(3.5));
                         if self.update_dialog_on_complete {
                             self.pending_update_dialog = Some(UpdateDialog::UpdateAvailable {
@@ -53,10 +58,16 @@ impl WinchiselApp {
                         }
                     }
                     UpdateCheckResult::Error(err) => {
-                        self.state.update_status = format!("Update check failed: {}", err);
-                        self.toasts
-                            .error(format!("Update check failed: {}", err))
-                            .duration(Duration::from_secs_f64(3.5));
+                        let localized_prefix = match err.as_str() {
+                            "update_error_check_updates" => self.tr("update_error_check_updates"),
+                            "update_error_read_response" => self.tr("update_error_read_response"),
+                            "update_error_parse_json" => self.tr("update_error_parse_json"),
+                            "update_error_no_tag_name" => self.tr("update_error_no_tag_name"),
+                            _ => self.tr("update_failed_prefix"),
+                        };
+                        let message = format!("{} {}", localized_prefix, err);
+                        self.state.update_status = message.clone();
+                        self.toasts.error(message).duration(Duration::from_secs_f64(3.5));
                         if self.update_dialog_on_complete {
                             self.pending_update_dialog = Some(UpdateDialog::Error { message: err });
                         }
@@ -78,9 +89,9 @@ impl WinchiselApp {
             return;
         };
         let title = match &dialog {
-            UpdateDialog::UpToDate => "No Update Found",
-            UpdateDialog::UpdateAvailable { .. } => "Update Available",
-            UpdateDialog::Error { .. } => "Update Check Failed",
+            UpdateDialog::UpToDate => self.tr("update_no_found_title"),
+            UpdateDialog::UpdateAvailable { .. } => self.tr("update_available_title"),
+            UpdateDialog::Error { .. } => self.tr("update_failed_title"),
         };
         egui::Window::new(title)
             .collapsible(false)
@@ -91,40 +102,65 @@ impl WinchiselApp {
                 ui.vertical(|ui| {
                     match &dialog {
                         UpdateDialog::UpToDate => {
-                            ui.label("You are already on the latest version.");
+                            ui.label(self.tr("update_up_to_date"));
                         }
                         UpdateDialog::UpdateAvailable { latest_version } => {
-                            ui.label(format!("A newer version is available: {}", latest_version));
-                            ui.label("Download and restart the app to install it.");
+                            ui.label(format!(
+                                "{} {}",
+                                self.tr("update_newer_version_prefix"),
+                                latest_version
+                            ));
+                            ui.label(self.tr("update_download_restart"));
                         }
                         UpdateDialog::Error { message } => {
                             ui.colored_label(
                                 egui::Color32::from_rgb(210, 80, 80),
-                                "Update check failed.",
+                                self.tr("update_failed"),
                             );
-                            ui.label(message);
+                            let display_message = match message.as_str() {
+                                "update_error_check_updates" => self.tr("update_error_check_updates"),
+                                "update_error_read_response" => self.tr("update_error_read_response"),
+                                "update_error_parse_json" => self.tr("update_error_parse_json"),
+                                "update_error_no_tag_name" => self.tr("update_error_no_tag_name"),
+                                "update_error_download" => self.tr("update_error_download"),
+                                "update_error_create_temp_file" => {
+                                    self.tr("update_error_create_temp_file")
+                                }
+                                "update_error_write_update_file" => {
+                                    self.tr("update_error_write_update_file")
+                                }
+                                msg if msg.starts_with("update_error_download_too_small") => {
+                                    self.tr("update_error_download_too_small")
+                                }
+                                "update_error_resolve_current_exe" => {
+                                    self.tr("update_error_resolve_current_exe")
+                                }
+                                "update_error_write_update_script" => {
+                                    self.tr("update_error_write_update_script")
+                                }
+                                "update_error_launch_updater" => self.tr("update_error_launch_updater"),
+                                _ => message.as_str(),
+                            };
+                            ui.label(display_message);
                         }
                     }
                     ui.add_space(14.0);
                     ui.horizontal(|ui| {
-                        if ui.button("Close").clicked() {
+                        if ui.button(self.tr("update_close")).clicked() {
                             self.pending_update_dialog = None;
                         }
                         if matches!(dialog, UpdateDialog::UpdateAvailable { .. })
-                            && ui.button("Download & Restart").clicked()
+                            && ui.button(self.tr("update_download_restart_btn")).clicked()
+                            && let UpdateDialog::UpdateAvailable { latest_version } = dialog.clone()
                         {
-                            if let UpdateDialog::UpdateAvailable { latest_version } = dialog.clone()
-                            {
-                                self.pending_update_dialog = None;
-                                if let Err(e) = updater::download_and_install(&latest_version) {
-                                    self.pending_update_dialog = Some(UpdateDialog::Error {
-                                        message: e,
-                                    });
-                                }
+                            self.pending_update_dialog = None;
+                            if let Err(e) = updater::download_and_install(&latest_version) {
+                                self.pending_update_dialog =
+                                    Some(UpdateDialog::Error { message: e });
                             }
                         }
                         if matches!(dialog, UpdateDialog::UpdateAvailable { .. })
-                            && ui.button("Check Again").clicked()
+                            && ui.button(self.tr("update_check_again")).clicked()
                         {
                             self.pending_update_dialog = None;
                             self.start_update_check(true);

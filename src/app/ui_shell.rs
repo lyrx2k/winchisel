@@ -1,7 +1,7 @@
 use super::WinchiselApp;
 use eframe::egui;
 use eframe::egui::{FontData, FontDefinitions, FontFamily, FontId, RichText};
-use iconflow::{fonts, try_icon, Pack, Size, Style};
+use iconflow::{Pack, Size, Style, fonts, try_icon};
 use std::sync::Arc;
 
 impl WinchiselApp {
@@ -44,41 +44,62 @@ impl WinchiselApp {
     ) {
         let selected = *current == tab;
         let desired_size = egui::vec2(ui.available_width(), 42.0);
-        let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
+        let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+        let response = ui.interact(
+            rect,
+            ui.id().with(("sidebar_tab_button", tab as i32)),
+            egui::Sense::click(),
+        );
         let hovered = response.hovered();
         let fill = if selected {
-            egui::Color32::from_rgb(54, 76, 108)
+            egui::Color32::from_rgb(10, 210, 254)
         } else if hovered {
-            egui::Color32::from_rgb(44, 44, 52)
+            egui::Color32::from_rgb(20, 54, 66)
         } else {
             egui::Color32::from_rgb(31, 31, 36)
         };
         let stroke = if selected || hovered {
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(88, 126, 180))
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(10, 210, 254))
         } else {
             egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 48, 54))
         };
         ui.painter()
             .rect(rect, 9.0, fill, stroke, egui::StrokeKind::Inside);
-        let spinner_slot = egui::Rect::from_min_max(
-            egui::pos2(rect.left() + 12.0, rect.center().y - 7.0),
-            egui::pos2(rect.left() + 26.0, rect.center().y + 7.0),
-        );
         if loading {
-            ui.put(spinner_slot, egui::Spinner::new().size(14.0));
+            let spinner_pos = egui::pos2(rect.right() - 18.0, rect.center().y);
+            let time = ui.input(|i| i.time) as f32;
+            let points = 24;
+            let radius = 6.0;
+            let start = time * 4.5;
+            let sweep = std::f32::consts::TAU * 0.75;
+            let mut arc_points = Vec::with_capacity(points + 1);
+            for i in 0..=points {
+                let t = i as f32 / points as f32;
+                let angle = start + sweep * t;
+                arc_points.push(egui::pos2(
+                    spinner_pos.x + angle.cos() * radius,
+                    spinner_pos.y + angle.sin() * radius,
+                ));
+            }
+            ui.painter().add(egui::Shape::line(
+                arc_points,
+                egui::Stroke::new(1.8, egui::Color32::from_rgb(226, 226, 226)),
+            ));
         }
-        let label_x = if loading { 34.0 } else { 14.0 };
-        let text_rect = egui::Rect::from_min_max(
-            egui::pos2(rect.left() + label_x, rect.top()),
-            egui::pos2(rect.right() - 12.0, rect.bottom()),
+        let label_x = 14.0;
+        let text_pos = egui::pos2(rect.left() + label_x, rect.center().y);
+        let text_color = if selected {
+            egui::Color32::BLACK
+        } else {
+            ui.visuals().widgets.active.text_color()
+        };
+        ui.painter().text(
+            text_pos,
+            egui::Align2::LEFT_CENTER,
+            label,
+            egui::TextStyle::Button.resolve(ui.style()),
+            text_color,
         );
-        ui.scope_builder(egui::UiBuilder::new().max_rect(text_rect), |ui| {
-            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                ui.label(
-                    egui::RichText::new(label).color(ui.visuals().widgets.active.text_color()),
-                );
-            });
-        });
         if response.clicked() {
             *current = tab;
         }
@@ -114,7 +135,7 @@ impl WinchiselApp {
         if !self.show_log_window {
             return;
         }
-        egui::Window::new("Logs")
+        egui::Window::new(self.tr("open_logs"))
             .open(&mut self.show_log_window)
             .default_size([860.0, 520.0])
             .show(ctx, |ui| {
@@ -153,5 +174,4 @@ impl WinchiselApp {
             RichText::new("?").size(size).color(color)
         }
     }
-
 }
