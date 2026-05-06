@@ -79,6 +79,27 @@ Please keep the UI consistent and make sure `cargo clippy --all-targets --all-fe
 
 ## License
 
-[AGPL-3.0 license](https://github.com/lyrx2k/winchisel/blob/main/LICENSE)
+### Software License
 
-> **What this means**: Winchisel is free and open source. Anyone can use, modify, or distribute it — but **all modifications must also be open source**. This protects the project from being stolen or turned into closed-source software. If you build upon Winchisel, you must share your changes under the same license.
+Winchisel is licensed under the [AGPL-3.0](LICENSE).
+
+In plain language:
+- ✅ Free to use for everyone — individuals, businesses, IT professionals
+- ✅ Use it to service and consult for clients
+- ✅ Modify for your own internal use
+- ❌ Fork, rebrand, and redistribute as a competing product
+- ❌ Remove or circumvent license/copyright notices
+
+### Additional Terms
+
+The AGPL-3.0 grants you the right to fork and modify. However, we respectfully ask that you:
+
+1. **Do not rebrand** — The name "Winchisel" and associated branding are reserved
+2. **Do not compete** — If you build upon this project, contribute back rather than launching a competing product
+3. **Respect the spirit** — This tool exists to help users, not to spawn proprietary clones
+
+Violations of these terms may result in loss of community support and trademark enforcement.
+
+### Trademark
+
+"Winchisel" and the Winchisel logo are trademarks of lyrx2k. Derivative works must use a different name and branding.
