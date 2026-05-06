@@ -4,6 +4,8 @@ Winchisel is a fast, native Windows tweaking app built in Rust with `egui`/`efra
 It focuses on practical system tweaks, cleaner defaults, and a compact UI for quickly
 changing Windows settings without digging through multiple control panels.
 
+[![Summarize new issues](https://github.com/lyrx2k/winchisel/actions/workflows/summary.yml/badge.svg?event=issues)](https://github.com/lyrx2k/winchisel/actions/workflows/summary.yml)
+
 ## Features
 
 - Home dashboard with system information
