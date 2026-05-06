@@ -639,7 +639,7 @@ impl eframe::App for WinchiselApp {
             && !self.state.update_check_loading
         {
             self.state.update_check_started = true;
-            self.start_update_check(false);
+            self.start_update_check(true);
         }
         if self.settings_save_due_at.is_some() {
             repaint_after = Some(repaint_after.map_or(Duration::from_millis(50), |cur| {
