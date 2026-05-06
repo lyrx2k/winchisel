@@ -7,7 +7,7 @@ changing Windows settings without digging through multiple control panels.
 ## Download
 [![Summarize new issues](https://github.com/lyrx2k/winchisel/actions/workflows/summary.yml/badge.svg?event=issues)](https://github.com/lyrx2k/winchisel/actions/workflows/summary.yml)
 
-Get the latest release here:
+**Get the latest release here:**
 
 [![Download Winchisel](https://img.shields.io/badge/Download-Latest%20Release-brightgreen?style=for-the-badge&logo=windows)](https://github.com/lyrx2k/winchisel/releases/latest)
 
