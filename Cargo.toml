@@ -1,0 +1,43 @@
+[package]
+authors = ["lyrx2k"]
+name = "Winchisel"
+description = "Fast and native windows tweaker"
+repository = "https://github.com/lyrx2k/winchisel"
+version = "0.1.0"
+edition = "2024"
+build = "src/build.rs"
+
+[profile.release]
+opt-level = "z"   # "z" optimiert aggressiv auf eine kleine Dateigröße. Alternativ "s" (Standard-Größenoptimierung). #opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[dependencies]
+tokio = { version = "1.52.2", default-features = false, features = ["sync", "rt-multi-thread"] }
+eframe = "0.34.1"
+egui_extras = { version = "0.34.1", features = ["image"] }
+egui-async = "0.4.1"
+egui_logger = "0.10.0"
+egui-notify = "0.22.0"
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Console",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+winreg = "0.56.0"
+sysinfo = "0.38.4"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+ureq = "3.3.0"
+iconflow = { version = "1.0.0", features = ["pack-lucide"] }
+
+[build-dependencies]
+winres = "0.1.12"
