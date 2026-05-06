@@ -105,6 +105,10 @@ impl WinchiselApp {
             .count()
     }
 
+    fn selected_package_count(&self) -> usize {
+        self.selected_debloater_count()
+    }
+
     fn category_label(category: &AppCategory) -> &'static str {
         match category {
             AppCategory::WindowsApps => "Windows Apps",
@@ -353,11 +357,12 @@ impl WinchiselApp {
                     self.state.debloater.debloater_filter_cache_view_mode = usize::MAX;
                 }
                 ui.add_space(12.0);
-                ui.label(format!("{} selected", self.selected_debloater_count()));
+                let selected_count = self.selected_package_count();
+                ui.label(format!("{} selected", selected_count));
                 ui.add_space(12.0);
                 if ui
                     .add_enabled(
-                        self.selected_debloater_count() > 0,
+                        selected_count > 0,
                         egui::Button::new("Install Selected")
                             .min_size(egui::vec2(132.0, 34.0))
                             .fill(egui::Color32::from_rgb(35, 88, 55))
@@ -369,7 +374,7 @@ impl WinchiselApp {
                 }
                 if ui
                     .add_enabled(
-                        self.selected_debloater_count() > 0,
+                        selected_count > 0,
                         egui::Button::new("Remove Selected")
                             .min_size(egui::vec2(132.0, 34.0))
                             .fill(egui::Color32::from_rgb(100, 42, 42))
@@ -635,10 +640,10 @@ impl WinchiselApp {
     fn is_app_installed(item: &AppItem, installed: &DebloaterInstalledState) -> bool {
         match item.category {
             AppCategory::WindowsApps => {
-                let package_names: Vec<String> = if item.package_names_lc.is_empty() {
-                    vec![item.package_name_lc.clone()]
+                let package_names = if item.package_names_lc.is_empty() {
+                    std::slice::from_ref(&item.package_name_lc)
                 } else {
-                    item.package_names_lc.clone()
+                    item.package_names_lc.as_slice()
                 };
                 package_names.iter().any(|name| {
                     installed.appx.iter().any(|installed_name| {

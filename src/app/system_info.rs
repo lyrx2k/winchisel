@@ -1,22 +1,46 @@
 use super::{HomeState, WinchiselApp};
+struct HomeStaticSnapshot {
+    computer_name: String,
+    os_version: String,
+    kernel_version: String,
+    bios_version: String,
+    bios_date: String,
+    cpu_brand: String,
+    cpu_cores: String,
+    gpu_name: String,
+}
+
 impl WinchiselApp {
     pub(crate) fn build_home_state() -> HomeState {
-        use sysinfo::{ProcessesToUpdate, System};
+        use sysinfo::System;
 
         let mut system = System::new();
         system.refresh_memory();
         system.refresh_cpu_usage();
-        let _ = system.refresh_processes(ProcessesToUpdate::All, true);
-
-        let cpu_brand = system
-            .cpus()
-            .first()
-            .map(|cpu| cpu.brand().to_string())
-            .unwrap_or_else(|| "Unknown CPU".to_string());
-        let cpu_cores = System::physical_core_count()
-            .or_else(|| Some(system.cpus().len()))
-            .unwrap_or(0);
-        let (gpu_name, _, _) = Self::read_gpu_info();
+        let snapshot = {
+            let cpu_brand = system
+                .cpus()
+                .first()
+                .map(|cpu| cpu.brand().to_string())
+                .unwrap_or_else(|| "Unknown CPU".to_string());
+            let cpu_cores = System::physical_core_count()
+                .or_else(|| Some(system.cpus().len()))
+                .unwrap_or(0);
+            let (gpu_name, _, _) = Self::read_gpu_info();
+            let (_system_model, _system_manufacturer, bios_version, bios_date) =
+                Self::read_system_info();
+            HomeStaticSnapshot {
+                computer_name: System::host_name().unwrap_or_else(|| "Unknown PC".to_string()),
+                os_version: System::os_version().unwrap_or_else(|| "Unknown OS".to_string()),
+                kernel_version: System::kernel_version()
+                    .unwrap_or_else(|| "Unknown kernel".to_string()),
+                bios_version,
+                bios_date,
+                cpu_brand,
+                cpu_cores: format!("{} cores", cpu_cores),
+                gpu_name,
+            }
+        };
         let total_memory_gb = system.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
         let used_memory_gb = system.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
         let mut total_disk_gb = 0.0f64;
@@ -30,20 +54,18 @@ impl WinchiselApp {
             total_disk_gb += total;
             used_disk_gb += used;
         }
-        let (_system_model, _system_manufacturer, bios_version, bios_date) = Self::read_system_info();
         let cpu_usage = format!("{:.0}%", system.global_cpu_usage());
         let uptime_secs = System::uptime();
 
         HomeState {
-            computer_name: System::host_name().unwrap_or_else(|| "Unknown PC".to_string()),
-            os_version: System::os_version().unwrap_or_else(|| "Unknown OS".to_string()),
-            kernel_version: System::kernel_version()
-                .unwrap_or_else(|| "Unknown kernel".to_string()),
-            bios_version,
-            bios_date,
-            cpu_brand,
-            cpu_cores: format!("{} cores", cpu_cores),
-            gpu_name,
+            computer_name: snapshot.computer_name,
+            os_version: snapshot.os_version,
+            kernel_version: snapshot.kernel_version,
+            bios_version: snapshot.bios_version,
+            bios_date: snapshot.bios_date,
+            cpu_brand: snapshot.cpu_brand,
+            cpu_cores: snapshot.cpu_cores,
+            gpu_name: snapshot.gpu_name,
             memory_total: format!("{total_memory_gb:.1} GB total"),
             memory_used: format!("{used_memory_gb:.1} GB used"),
             storage_total: format!("{total_disk_gb:.2} TB total"),
@@ -125,5 +147,4 @@ impl WinchiselApp {
             .unwrap_or_else(|| "Unknown Date".to_string());
         (model, manufacturer, bios_version, bios_date)
     }
-
 }

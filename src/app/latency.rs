@@ -88,12 +88,12 @@ impl WinchiselApp {
         ui.add_space(14.0);
 
         if self.state.latency.latency_loading || self.latency_load_worker.is_some() {
-            ui.ctx().request_repaint_after(Duration::from_millis(16));
+            self.request_latency_repaint(ui.ctx());
         }
         if (self.state.latency.latency_loading || self.state.latency.latency_completion_pending)
             && self.update_latency_progress_display()
         {
-            ui.ctx().request_repaint_after(Duration::from_millis(16));
+            self.request_latency_repaint(ui.ctx());
         }
 
         if self.state.latency.latency_lines.is_empty() && !self.state.latency.latency_loading {
@@ -198,6 +198,24 @@ impl WinchiselApp {
         if clear_worker {
             self.latency_load_worker = None;
         }
+    }
+
+    fn request_latency_repaint(&self, ctx: &egui::Context) {
+        let now = Instant::now();
+        let next_tick = self
+            .state
+            .latency
+            .latency_tick_next_at
+            .map(|t| t.saturating_duration_since(now))
+            .unwrap_or(Duration::from_millis(250));
+        let next_completion = self
+            .state
+            .latency
+            .latency_completion_ready_at
+            .map(|t| t.saturating_duration_since(now))
+            .unwrap_or(Duration::from_millis(250));
+        let repaint_after = next_tick.min(next_completion).max(Duration::from_millis(16));
+        ctx.request_repaint_after(repaint_after);
     }
 
     fn latency_line_color(color: i32) -> egui::Color32 {

@@ -100,6 +100,15 @@ struct DownloadsLoadWorker {
     rx: Receiver<DownloadsLoadResult>,
 }
 
+struct DownloadInstallResult {
+    ok: usize,
+    fail: usize,
+}
+
+struct DownloadInstallWorker {
+    rx: Receiver<DownloadInstallResult>,
+}
+
 struct RestorePointLoadWorker {
     rx: Receiver<RestorePointResult>,
 }
@@ -145,6 +154,7 @@ pub struct WinchiselApp {
     pending_debloater_action: Option<debloater::DebloaterAction>,
     pending_download_action: Option<DownloadAction>,
     downloads_load_worker: Option<DownloadsLoadWorker>,
+    downloads_install_worker: Option<DownloadInstallWorker>,
     downloads_cache_ready: bool,
     performance_load_worker: Option<performance_tab::PerformanceLoadWorker>,
     cpu_load_worker: Option<processes_tab::CpuLoadWorker>,
@@ -178,7 +188,6 @@ impl WinchiselApp {
         let (downloads_load_worker, downloads_loading) =
             Self::spawn_downloads_worker(download_items.clone());
         let (performance_load_worker, performance_loaded) = Self::spawn_performance_worker("");
-        let cpu_load_worker = Some(Self::spawn_cpu_worker(false));
         Self {
             state: AppState {
                 last_saved_settings: settings.clone(),
@@ -219,24 +228,22 @@ impl WinchiselApp {
                 },
                 home: Self::build_home_state(),
                 cpu: processes_tab::CpuState {
-                    cpu_filter_active_only: false,
-                    cpu_refresh_interval_index: 2,
+                    cpu_filter_active_only: true,
                     cpu_visible_count: 0,
                     cpu_total_usage: "0.0%".to_string(),
                     cpu_processes_all: Vec::new(),
                     cpu_processes: Vec::new(),
                     cpu_selected_pid: -1,
                     cpu_selected_name: String::new(),
-                    cpu_open_pid: -1,
-                    io_open_pid: -1,
-                    affinity_open_pid: -1,
                     cpu_affinity_dialog_visible: false,
                     cpu_affinity_dialog_pid: -1,
                     cpu_affinity_dialog_name: String::new(),
                     cpu_affinity_dialog_mask: String::new(),
                     cpu_affinity_cores: Vec::new(),
                     cpu_last_refresh: None,
+                    cpu_reload_ready_at: None,
                     cpu_reload_pending: false,
+                    cpu_last_error: None,
                     cpu_pending_action: None,
                     cpu_realtime_confirm_visible: false,
                     cpu_realtime_pending_pid: -1,
@@ -261,9 +268,10 @@ impl WinchiselApp {
             pending_debloater_action: None,
             pending_download_action: None,
             downloads_load_worker,
+            downloads_install_worker: None,
             downloads_cache_ready: false,
             performance_load_worker,
-            cpu_load_worker,
+            cpu_load_worker: None,
             latency_load_worker: None,
             restore_point_load_worker: None,
             restore_point_dialog: None,
@@ -478,8 +486,11 @@ foreach ($p in $paths) {
         }
     }
 }
-"#;
+        "#;
         Self::ps_lines(cmd)
+            .into_iter()
+            .map(|s| s.to_lowercase())
+            .collect()
     }
 
     fn is_download_installed(
@@ -505,8 +516,7 @@ foreach ($p in $paths) {
         }
         registry_names
             .iter()
-            .map(|s| s.to_lowercase())
-            .any(|installed| installed.contains(&name_lower) || name_lower.contains(&installed))
+            .any(|installed| installed.contains(&name_lower) || name_lower.contains(installed))
     }
 
     fn category_label_download(category: &DownloadCategory) -> &'static str {
@@ -535,11 +545,13 @@ impl eframe::App for WinchiselApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.init_style(ui.ctx());
         ui.ctx().plugin_or_default::<egui_async::EguiAsyncPlugin>();
+        let mut repaint_after: Option<Duration> = None;
         self.poll_latency_worker();
         self.ensure_debloater_selection();
         self.ensure_download_selection();
         self.poll_debloater_load();
         self.poll_downloads_load();
+        self.poll_download_install();
         self.poll_performance_load();
         self.poll_cpu_load();
         self.poll_restore_point();
@@ -552,36 +564,29 @@ impl eframe::App for WinchiselApp {
             self.start_update_check(false);
         }
         if self.settings_save_due_at.is_some() {
-            ui.ctx().request_repaint_after(Duration::from_millis(50));
+            repaint_after = Some(repaint_after.map_or(Duration::from_millis(50), |cur| {
+                cur.min(Duration::from_millis(50))
+            }));
         }
         WinchiselApp::performance_tick(self, ui);
         if self.state.active_tab == Tab::Processes
-            && let Some(interval) = self.cpu_refresh_interval()
+            && self.state.cpu.cpu_last_refresh.is_none()
+            && self.cpu_load_worker.is_none()
+            && !self.state.cpu.cpu_reload_pending
         {
-            let panels_closed = self.state.cpu.cpu_open_pid == -1
-                && self.state.cpu.io_open_pid == -1
-                && self.state.cpu.affinity_open_pid == -1
-                && !self.state.cpu.cpu_affinity_dialog_visible;
-            let elapsed_ready = self
+            self.request_cpu_reload();
+        }
+        if self.state.cpu.cpu_reload_pending
+            && self.cpu_load_worker.is_none()
+            && self
                 .state
                 .cpu
-                .cpu_last_refresh
-                .map(|last| last.elapsed() >= interval)
-                .unwrap_or(true);
-            if panels_closed && elapsed_ready && self.cpu_load_worker.is_none() {
-                self.request_cpu_reload();
-            }
-            let repaint_after = if let Some(last) = self.state.cpu.cpu_last_refresh {
-                let elapsed = last.elapsed();
-                if elapsed >= interval {
-                    Duration::from_millis(100)
-                } else {
-                    (interval - elapsed).min(Duration::from_millis(250))
-                }
-            } else {
-                Duration::from_millis(100)
-            };
-            ui.ctx().request_repaint_after(repaint_after);
+                .cpu_reload_ready_at
+                .is_some_and(|ready_at| Instant::now() >= ready_at)
+        {
+            self.state.cpu.cpu_reload_pending = false;
+            self.state.cpu.cpu_reload_ready_at = None;
+            self.start_cpu_load();
         }
         if self.state.active_tab == Tab::Home {
             let refresh_due = self
@@ -592,32 +597,44 @@ impl eframe::App for WinchiselApp {
             if refresh_due {
                 self.state.home = Self::build_home_state();
                 self.state.home_last_refresh = Some(Instant::now());
-                ui.ctx().request_repaint_after(Duration::from_millis(100));
+                repaint_after = Some(repaint_after.map_or(Duration::from_millis(100), |cur| {
+                    cur.min(Duration::from_millis(100))
+                }));
             } else if let Some(last) = self.state.home_last_refresh {
                 let elapsed = last.elapsed();
                 let until_refresh = Duration::from_secs(5).saturating_sub(elapsed);
-                ui.ctx()
-                    .request_repaint_after(until_refresh.min(Duration::from_millis(250)));
+                let next = until_refresh.min(Duration::from_millis(250));
+                repaint_after = Some(repaint_after.map_or(next, |cur| cur.min(next)));
             }
         }
         if self.state.debloater.debloater_loading || self.debloater_load_worker.is_some() {
-            ui.ctx().request_repaint_after(Duration::from_millis(50));
+            repaint_after = Some(repaint_after.map_or(Duration::from_millis(50), |cur| {
+                cur.min(Duration::from_millis(50))
+            }));
         }
         if self.state.downloads.downloads_loading || self.downloads_load_worker.is_some() {
-            ui.ctx().request_repaint_after(Duration::from_millis(50));
+            repaint_after = Some(repaint_after.map_or(Duration::from_millis(50), |cur| {
+                cur.min(Duration::from_millis(50))
+            }));
         }
         if WinchiselApp::performance_sidebar_loading(self) {
-            ui.ctx().request_repaint_after(Duration::from_millis(50));
+            repaint_after = Some(repaint_after.map_or(Duration::from_millis(50), |cur| {
+                cur.min(Duration::from_millis(50))
+            }));
         }
         if self.cpu_load_worker.is_some() {
-            ui.ctx().request_repaint_after(Duration::from_millis(50));
-        }
-        if self.state.cpu.cpu_reload_pending && self.cpu_load_worker.is_none() {
-            self.state.cpu.cpu_reload_pending = false;
-            self.start_cpu_load();
+            repaint_after = Some(repaint_after.map_or(Duration::from_millis(50), |cur| {
+                cur.min(Duration::from_millis(50))
+            }));
         }
         if self.state.update_check_loading || self.update_check_rx.is_some() {
-            ui.ctx().request_repaint_after(Duration::from_millis(50));
+            repaint_after = Some(repaint_after.map_or(Duration::from_millis(50), |cur| {
+                cur.min(Duration::from_millis(50))
+            }));
+        }
+
+        if let Some(delay) = repaint_after {
+            ui.ctx().request_repaint_after(delay);
         }
 
         egui::Panel::top("top_bar").show_inside(ui, |ui| {
@@ -651,7 +668,14 @@ impl eframe::App for WinchiselApp {
                                     .color(egui::Color32::from_rgb(166, 166, 166)),
                             );
                         }
-                        ui.label(&self.state.update_status);
+                        let status_color = if self.state.update_status == "Up to date" {
+                            egui::Color32::from_rgb(96, 181, 103)
+                        } else if self.state.update_status.contains("Update available") {
+                            egui::Color32::from_rgb(226, 196, 84)
+                        } else {
+                            egui::Color32::from_rgb(166, 166, 166)
+                        };
+                        ui.colored_label(status_color, &self.state.update_status);
                     });
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -825,7 +849,7 @@ impl eframe::App for WinchiselApp {
                     ui.horizontal(|ui| {
                         if ui.button("Confirm Install").clicked() {
                             self.pending_download_action = None;
-                            self.run_download_install();
+                            self.start_download_install();
                         }
                         if ui.button("Cancel").clicked() {
                             self.pending_download_action = None;

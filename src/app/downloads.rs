@@ -1,7 +1,9 @@
-use super::WinchiselApp;
+use super::{DownloadInstallResult, DownloadInstallWorker, WinchiselApp};
 use crate::download_definitions::{DownloadApp, DownloadCategory, get_all_downloads};
 use eframe::egui;
+use std::collections::HashSet;
 use std::process::Command;
+use std::sync::mpsc;
 
 impl WinchiselApp {
     fn rebuild_downloads_filter_cache(&mut self) {
@@ -49,8 +51,8 @@ impl WinchiselApp {
         }
     }
 
-    fn filtered_download_items(&self) -> Vec<usize> {
-        self.state.downloads.downloads_filter_cache_all.clone()
+    fn filtered_download_items(&self) -> &[usize] {
+        &self.state.downloads.downloads_filter_cache_all
     }
 
     fn selected_download_count(&self) -> usize {
@@ -60,6 +62,15 @@ impl WinchiselApp {
             .iter()
             .filter(|checked| **checked)
             .count()
+    }
+
+    fn has_installable_selected_download(&self) -> bool {
+        self.state
+            .downloads
+            .downloads_items
+            .iter()
+            .zip(self.state.downloads.downloads_selected.iter())
+            .any(|(item, selected)| *selected && !item.winget_ids.is_empty())
     }
 
     pub(crate) fn selected_download_items(&self) -> Vec<DownloadApp> {
@@ -75,12 +86,10 @@ impl WinchiselApp {
 
     fn render_download_row(&mut self, ui: &mut egui::Ui, idx: usize) {
         let item = &self.state.downloads.downloads_items[idx];
-        let selected = self
-            .state
-            .downloads
-            .downloads_selected
-            .get_mut(idx)
-            .expect("download selection state in sync");
+        if idx >= self.state.downloads.downloads_selected.len() {
+            return;
+        }
+        let selected = &mut self.state.downloads.downloads_selected[idx];
         let row_frame = if *selected {
             egui::Frame::new()
                 .fill(egui::Color32::from_rgb(27, 32, 44))
@@ -173,45 +182,71 @@ impl WinchiselApp {
             });
     }
 
-    pub(crate) fn run_download_install(&mut self) {
+    pub(crate) fn start_download_install(&mut self) {
+        if self.downloads_install_worker.is_some() {
+            return;
+        }
         let items = self.selected_download_items();
         if items.is_empty() {
             self.state.update_status = "Nothing selected".to_string();
             return;
         }
 
-        let mut ok = 0usize;
-        let mut fail = 0usize;
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut ok = 0usize;
+            let mut fail = 0usize;
 
-        for item in items {
-            let Some(winget_id) = item.winget_ids.first() else {
-                fail += 1;
-                continue;
-            };
+            for item in items {
+                let Some(winget_id) = item.winget_ids.first() else {
+                    fail += 1;
+                    continue;
+                };
 
-            let cmd = format!(
-                "winget install --id \"{}\" --exact --accept-package-agreements --accept-source-agreements",
-                winget_id
-            );
-            let mut command = Command::new("powershell.exe");
-            command.args([
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-WindowStyle",
-                "Hidden",
-                "-Command",
-                &cmd,
-            ]);
-            match command.output() {
-                Ok(output) if output.status.success() => ok += 1,
-                _ => fail += 1,
+                let cmd = format!(
+                    "winget install --id \"{}\" --exact --accept-package-agreements --accept-source-agreements",
+                    winget_id
+                );
+                let mut command = Command::new("powershell.exe");
+                command.args([
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-WindowStyle",
+                    "Hidden",
+                    "-Command",
+                    &cmd,
+                ]);
+                match command.output() {
+                    Ok(output) if output.status.success() => ok += 1,
+                    _ => fail += 1,
+                }
+            }
+
+            let _ = tx.send(DownloadInstallResult { ok, fail });
+        });
+        self.downloads_install_worker = Some(DownloadInstallWorker { rx });
+        self.state.update_status = "Installing selected downloads...".to_string();
+    }
+
+    pub(crate) fn poll_download_install(&mut self) {
+        let Some(worker) = self.downloads_install_worker.as_ref() else {
+            return;
+        };
+        match worker.rx.try_recv() {
+            Ok(result) => {
+                self.state.update_status =
+                    format!("Installed: {}  Failed: {}", result.ok, result.fail);
+                self.downloads_cache_ready = false;
+                self.downloads_install_worker = None;
+                self.start_downloads_load();
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.state.update_status = "Install job failed".to_string();
+                self.downloads_install_worker = None;
             }
         }
-
-        self.state.update_status = format!("Installed: {}  Failed: {}", ok, fail);
-        self.downloads_cache_ready = false;
-        self.start_downloads_load();
     }
 
     fn downloads_category_label(idx: usize) -> &'static str {
@@ -278,10 +313,7 @@ impl WinchiselApp {
                 ui.add_space(8.0);
                 ui.label(format!("{} selected", self.selected_download_count()));
                 ui.add_space(12.0);
-                let install_enabled = self
-                    .selected_download_items()
-                    .iter()
-                    .any(|item| !item.winget_ids.is_empty());
+                let install_enabled = self.has_installable_selected_download();
                 if ui
                     .add_enabled(
                         install_enabled,
@@ -310,7 +342,7 @@ impl WinchiselApp {
                 ui.add_space(40.0);
             }
 
-            let visible_items = self.filtered_download_items();
+            let visible_items: HashSet<usize> = self.filtered_download_items().iter().copied().collect();
             if visible_items.is_empty() {
                 ui.label("No apps or downloads to display.");
             } else {
@@ -329,26 +361,24 @@ impl WinchiselApp {
                             if category_items.is_empty() {
                                 continue;
                             }
-                            ui.add_space(6.0);
-                            ui.horizontal(|ui| {
-                                ui.add_space(4.0);
-                                ui.separator();
+                            egui::CollapsingHeader::new(
+                                egui::RichText::new(label)
+                                    .strong()
+                                    .size(15.0)
+                                    .color(egui::Color32::from_rgb(149, 194, 255)),
+                            )
+                            .id_salt(("downloads_category", idx))
+                            .default_open(true)
+                            .show(ui, |ui| {
                                 ui.add_space(10.0);
-                                ui.label(
-                                    egui::RichText::new(label)
-                                        .strong()
-                                        .size(13.0)
-                                        .color(egui::Color32::from_rgb(149, 194, 255)),
-                                );
-                            });
-                            ui.add_space(8.0);
-                            for item_idx in category_items {
-                                if visible_items.contains(&item_idx) {
-                                    self.render_download_row(ui, item_idx);
-                                    ui.add_space(8.0);
+                                for item_idx in category_items {
+                                    if visible_items.contains(&item_idx) {
+                                        self.render_download_row(ui, item_idx);
+                                        ui.add_space(8.0);
+                                    }
                                 }
-                            }
-                            ui.add_space(14.0);
+                                ui.add_space(8.0);
+                            });
                         }
                     });
             }

@@ -4,7 +4,7 @@ use iconflow::Pack;
 
 impl WinchiselApp {
     pub(crate) fn render_home_tab(&mut self, ui: &mut egui::Ui) {
-        let home = self.state.home.clone();
+        let home = &self.state.home;
         ui.vertical(|ui| {
             let gap = 10.0;
             let full = ui.available_width();
@@ -17,14 +17,14 @@ impl WinchiselApp {
                 .spacing(egui::vec2(gap, gap))
                 .show(ui, |ui| {
                     let cards = [
-                        ("monitor", "System", home.computer_name.clone(), Some("System Product Name".to_string()), egui::Color32::from_rgb(124, 171, 238), "system"),
-                        ("cpu", "Processor", home.cpu_brand.clone(), Some(home.cpu_cores.clone()), egui::Color32::from_rgb(236, 184, 87), "cpu"),
-                        ("image", "Graphics", home.gpu_name.clone(), None, egui::Color32::from_rgb(234, 149, 92), "gpu"),
-                        ("memory-stick", "Memory", home.memory_total.clone(), Some(home.memory_used.clone()), egui::Color32::from_rgb(186, 129, 235), "memory"),
-                        ("hard-drive", "Storage", home.storage_total.clone(), Some(home.storage_used.clone()), egui::Color32::from_rgb(112, 169, 236), "stats"),
-                        ("windows", "Windows", home.os_version.clone(), Some(home.kernel_version.clone()), egui::Color32::from_rgb(145, 188, 110), "windows"),
-                        ("clock-3", "Uptime", home.uptime.clone(), Some(self.state.update_status.clone()), egui::Color32::from_rgb(132, 198, 255), "stats"),
-                        ("gauge", "Performance", home.cpu_usage.clone(), Some("-".to_string()), egui::Color32::from_rgb(132, 198, 255), "perf"),
+                        ("monitor", "System", home.computer_name.as_str(), Some("System Product Name"), egui::Color32::from_rgb(124, 171, 238), "system"),
+                        ("cpu", "Processor", home.cpu_brand.as_str(), Some(home.cpu_cores.as_str()), egui::Color32::from_rgb(236, 184, 87), "cpu"),
+                        ("image", "Graphics", home.gpu_name.as_str(), None, egui::Color32::from_rgb(234, 149, 92), "gpu"),
+                        ("memory-stick", "Memory", home.memory_total.as_str(), Some(home.memory_used.as_str()), egui::Color32::from_rgb(186, 129, 235), "memory"),
+                        ("hard-drive", "Storage", home.storage_total.as_str(), Some(home.storage_used.as_str()), egui::Color32::from_rgb(112, 169, 236), "stats"),
+                        ("windows", "Windows", home.os_version.as_str(), Some(home.kernel_version.as_str()), egui::Color32::from_rgb(145, 188, 110), "windows"),
+                        ("clock-3", "Uptime", home.uptime.as_str(), Some(self.state.update_status.as_str()), egui::Color32::from_rgb(132, 198, 255), "stats"),
+                        ("gauge", "Performance", home.cpu_usage.as_str(), Some("-"), egui::Color32::from_rgb(132, 198, 255), "perf"),
                     ];
 
                     for (idx, (icon_name, label, value, subtitle, color, kind)) in cards.into_iter().enumerate() {
@@ -32,34 +32,34 @@ impl WinchiselApp {
                             ui,
                             Self::icon_text(Pack::Lucide, icon_name, 16.0, color),
                             label,
-                            &value,
-                            subtitle.as_deref(),
+                            value,
+                            subtitle,
                             idx == 0,
                         );
                         match kind {
-                            "system" => resp.on_hover_ui(|ui| Self::home_info_popup(ui, &home)),
+                            "system" => resp.on_hover_ui(|ui| Self::home_info_popup(ui, home)),
                             "cpu" => resp.on_hover_ui(|ui| {
                                 Self::detail_kv_rows(
                                     ui,
                                     &[
-                                        ("CPU", home.cpu_usage.clone()),
-                                        ("CPU Model", home.cpu_brand.clone()),
-                                        ("Cores", home.cpu_cores.clone()),
+                                        ("CPU", home.cpu_usage.as_str()),
+                                        ("CPU Model", home.cpu_brand.as_str()),
+                                        ("Cores", home.cpu_cores.as_str()),
                                     ],
                                 );
                             }),
                             "gpu" => resp.on_hover_ui(|ui| {
                                 Self::detail_kv_rows(
                                     ui,
-                                    &[("GPU", home.gpu_name.clone())],
+                                    &[("GPU", home.gpu_name.as_str())],
                                 );
                             }),
                             "memory" => resp.on_hover_ui(|ui| {
                                 Self::detail_kv_rows(
                                     ui,
                                     &[
-                                        ("Memory Total", home.memory_total.clone()),
-                                        ("Memory Used", home.memory_used.clone()),
+                                        ("Memory Total", home.memory_total.as_str()),
+                                        ("Memory Used", home.memory_used.as_str()),
                                     ],
                                 );
                             }),
@@ -67,12 +67,12 @@ impl WinchiselApp {
                                 Self::detail_kv_rows(
                                     ui,
                                     &[
-                                        ("Version", home.os_version.clone()),
-                                        ("Kernel", home.kernel_version.clone()),
+                                        ("Version", home.os_version.as_str()),
+                                        ("Kernel", home.kernel_version.as_str()),
                                     ],
                                 );
                             }),
-                            _ => resp.on_hover_ui(|ui| Self::home_info_popup(ui, &home)),
+                            _ => resp.on_hover_ui(|ui| Self::home_info_popup(ui, home)),
                         };
                         if idx % 2 == 1 {
                             ui.end_row();
@@ -136,7 +136,7 @@ impl WinchiselApp {
             .response
     }
 
-    fn detail_kv_rows(ui: &mut egui::Ui, rows: &[(&str, String)]) {
+    fn detail_kv_rows(ui: &mut egui::Ui, rows: &[(&str, &str)]) {
         ui.vertical(|ui| {
             for (key, value) in rows {
                 Self::home_kv(ui, key, value);
@@ -148,11 +148,11 @@ impl WinchiselApp {
         Self::detail_kv_rows(
             ui,
             &[
-                ("Name", state.computer_name.clone()),
-                ("BIOS Version", state.bios_version.clone()),
-                ("BIOS Date", state.bios_date.clone()),
-                ("CPU", state.cpu_usage.clone()),
-                ("GPU", state.gpu_name.clone()),
+                ("Name", state.computer_name.as_str()),
+                ("BIOS Version", state.bios_version.as_str()),
+                ("BIOS Date", state.bios_date.as_str()),
+                ("CPU", state.cpu_usage.as_str()),
+                ("GPU", state.gpu_name.as_str()),
             ],
         );
     }

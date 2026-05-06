@@ -1566,7 +1566,7 @@ pub const RAW_REG_RULES: &[RawRegRule] = &[
 use crate::GamingTweakRow;
 use std::collections::{HashMap, HashSet};
 use std::os::windows::process::CommandExt;
-use std::sync::{LazyLock, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use winreg::HKEY;
 use winreg::RegKey;
 use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WRITE};
@@ -2661,12 +2661,14 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
 
 static STATE_CACHE: LazyLock<Mutex<HashMap<i32, (bool, i32)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+static SCHEDULED_TASK_CACHE: OnceLock<Arc<HashMap<String, bool>>> = OnceLock::new();
 static CATALOG: OnceLock<Vec<CatalogItem>> = OnceLock::new();
+static CATALOG_BY_ID: OnceLock<HashMap<i32, &'static CatalogItem>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 struct CatalogItem {
     num_id: i32,
-    key: String,
+    key: &'static str,
     category: i32,
     name: String,
     name_lc: String,
@@ -2676,7 +2678,7 @@ struct CatalogItem {
     options: Vec<String>,
     is_new: bool,
 }
-static PERF_EXPANDED: LazyLock<Mutex<HashMap<String, bool>>> =
+static PERF_EXPANDED: LazyLock<Mutex<HashMap<&'static str, bool>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Clone, Copy)]
@@ -2799,7 +2801,7 @@ fn catalog() -> &'static [CatalogItem] {
             .enumerate()
             .map(|(i, r)| CatalogItem {
                 num_id: 2000 + i as i32,
-                key: r.id.to_string(),
+                key: r.id,
                 category: group_to_category(r.group),
                 name: r.name.to_string(),
                 name_lc: r.name.to_ascii_lowercase(),
@@ -2821,6 +2823,13 @@ fn catalog() -> &'static [CatalogItem] {
                 is_new: is_new_setting(r.id),
             })
             .collect()
+    })
+}
+
+fn catalog_by_id() -> &'static HashMap<i32, &'static CatalogItem> {
+    CATALOG_BY_ID.get_or_init(|| {
+        let items = catalog();
+        items.iter().map(|item| (item.num_id, item)).collect()
     })
 }
 
@@ -2871,7 +2880,7 @@ fn apply_single_profile(id: i32, recommended: bool) {
     let Some(item) = item_by_num_id(id) else {
         return;
     };
-    let rule = profile_rule(item.key.as_str());
+    let rule = profile_rule(item.key);
     if item.input_type == 0 {
         let on = if recommended {
             rule.and_then(|r| {
@@ -2938,7 +2947,7 @@ fn group_to_category(group: &str) -> i32 {
 }
 
 fn item_by_num_id(id: i32) -> Option<&'static CatalogItem> {
-    catalog().iter().find(|c| c.num_id == id)
+    catalog_by_id().get(&id).copied()
 }
 
 fn build_grouped_rows_filtered(query: &str) -> [Vec<GamingTweakRow>; 10] {
@@ -2953,10 +2962,12 @@ fn build_grouped_rows_from(
     query: Option<&str>,
 ) -> [Vec<GamingTweakRow>; 10] {
     let mut groups: [Vec<GamingTweakRow>; 10] = Default::default();
-    let mut state_by_key: HashMap<String, (bool, i32)> = HashMap::new();
+    let mut state_by_key: HashMap<&'static str, (bool, i32)> = HashMap::new();
     let query = query.filter(|q| !q.is_empty());
+    let items = catalog();
+    let show_sysmain_warning = has_hdd_disk();
 
-    for t in catalog() {
+    for t in items {
         if let Some(q) = query
             && !t.name_lc.contains(q)
             && !t.desc_lc.contains(q)
@@ -2977,24 +2988,25 @@ fn build_grouped_rows_from(
 
         let (badge_recommended, badge_default, badge_custom) =
             profile_status_badges(t, enabled, selected);
-        state_by_key.insert(t.key.clone(), (enabled, selected));
-        let is_child = parent_for(t.key.as_str()).is_some();
+        state_by_key.insert(t.key, (enabled, selected));
+        let is_child = parent_for(t.key).is_some();
         let expanded = if let Ok(m) = PERF_EXPANDED.lock() {
-            *m.get(t.key.as_str()).unwrap_or(&true)
+            *m.get(t.key).unwrap_or(&true)
         } else {
             true
         };
         groups[idx].push(GamingTweakRow {
             tweak_id: t.num_id,
             category: t.category,
+            key: t.key,
             name: t.name.clone(),
             description: t.desc.clone(),
             enabled,
             is_editable: true,
             is_child,
-            is_parent: has_children(t.key.as_str()),
+            is_parent: has_children(t.key),
             is_expanded: expanded,
-            warning_text: warning_for(t.key.as_str(), selected),
+            warning_text: warning_for(t.key, selected, show_sysmain_warning),
             input_type: t.input_type,
             options: t.options.clone(),
             selected_index: selected,
@@ -3052,6 +3064,10 @@ fn has_children(key: &str) -> bool {
 
 fn apply_parent_visibility(groups: &mut [Vec<GamingTweakRow>; 10]) {
     let mut parent_state: HashMap<i32, bool> = HashMap::new();
+    let mut parent_lookup: HashMap<&'static str, i32> = HashMap::new();
+    for item in catalog() {
+        parent_lookup.insert(item.key, item.num_id);
+    }
     for group in groups.iter() {
         for row in group {
             if row.is_parent {
@@ -3061,34 +3077,39 @@ fn apply_parent_visibility(groups: &mut [Vec<GamingTweakRow>; 10]) {
     }
     for group in groups.iter_mut() {
         group.retain(|row| {
-            if let Some(item) = item_by_num_id(row.tweak_id)
-                && let Some(parent_key) = parent_for(item.key.as_str())
-                && let Some(parent_item) = catalog().iter().find(|c| c.key == parent_key)
+            if let Some(parent_key) = parent_for(row.key)
+                && let Some(parent_id) = parent_lookup.get(parent_key)
             {
-                return parent_state
-                    .get(&parent_item.num_id)
-                    .copied()
-                    .unwrap_or(true);
+                return parent_state.get(parent_id).copied().unwrap_or(true);
             }
             true
         });
     }
 }
 
-fn warning_for(key: &str, selected: i32) -> String {
+fn warning_for(key: &str, selected: i32, show_sysmain_warning: bool) -> String {
     match key {
-        "gaming-sysmain-service" if selected == 0 => "WARNING: Disabling SysMain on HDD systems can reduce responsiveness and slow app launches.".to_string(),
+        "gaming-sysmain-service" if selected == 0 && show_sysmain_warning => "WARNING: Disabling SysMain on HDD systems can reduce responsiveness and slow app launches.".to_string(),
         "gaming-windows-search-service" if selected == 0 => "WARNING: Disabling Windows Search can break/slow Start, Explorer, and Outlook search.".to_string(),
         "gaming-disable-mpo-min-fps" if selected == 0 => "NOTE: This setting only matters when MPO is enabled.".to_string(),
         _ => String::new(),
     }
 }
 
+fn has_hdd_disk() -> bool {
+    use sysinfo::{DiskKind, Disks};
+
+    Disks::new_with_refreshed_list()
+        .list()
+        .iter()
+        .any(|disk| matches!(disk.kind(), DiskKind::HDD))
+}
+
 fn apply_dependency_editability(
     groups: &mut [Vec<GamingTweakRow>; 10],
-    state_by_key: &HashMap<String, (bool, i32)>,
+    state_by_key: &HashMap<&'static str, (bool, i32)>,
 ) {
-    let mut blocked: HashSet<String> = HashSet::new();
+    let mut blocked: HashSet<&'static str> = HashSet::new();
     for rule in DEPENDENCY_RULES {
         match *rule {
             DependencyRule::RequiresEnabled {
@@ -3100,7 +3121,7 @@ fn apply_dependency_editability(
                     .map(|(enabled, _)| *enabled)
                     .unwrap_or(false);
                 if !req_enabled {
-                    blocked.insert(dependent.to_string());
+                    blocked.insert(dependent);
                 }
             }
             DependencyRule::RequiresSelection {
@@ -3113,7 +3134,7 @@ fn apply_dependency_editability(
                     .map(|(_, selected)| *selected)
                     .unwrap_or(-1);
                 if req_selected != required_index {
-                    blocked.insert(dependent.to_string());
+                    blocked.insert(dependent);
                 }
             }
         }
@@ -3121,9 +3142,7 @@ fn apply_dependency_editability(
 
     for group in groups.iter_mut() {
         for row in group.iter_mut() {
-            if let Some(item) = item_by_num_id(row.tweak_id) {
-                row.is_editable = !blocked.contains(item.key.as_str());
-            }
+            row.is_editable = !blocked.contains(row.key);
         }
     }
 }
@@ -3155,7 +3174,7 @@ fn default_profile_state(item: &CatalogItem) -> (bool, i32) {
 }
 
 fn profile_target_toggle(item: &CatalogItem, recommended: bool) -> Option<bool> {
-    let rule = profile_rule(item.key.as_str())?;
+    let rule = profile_rule(item.key)?;
     if recommended {
         (rule.rec_t >= 0).then_some(rule.rec_t == 1)
     } else {
@@ -3164,7 +3183,7 @@ fn profile_target_toggle(item: &CatalogItem, recommended: bool) -> Option<bool> 
 }
 
 fn profile_target_selection(item: &CatalogItem, recommended: bool) -> Option<i32> {
-    let rule = profile_rule(item.key.as_str())?;
+    let rule = profile_rule(item.key)?;
     if recommended {
         (rule.rec_s >= 0).then_some(rule.rec_s as i32)
     } else {
@@ -3191,7 +3210,7 @@ fn profile_status_badges(item: &CatalogItem, enabled: bool, selected: i32) -> (b
 }
 
 fn profile_target_label(item: &CatalogItem, recommended: bool, current_selected: i32) -> String {
-    let rule = profile_rule(item.key.as_str());
+    let rule = profile_rule(item.key);
     if item.input_type == 0 {
         let target = if recommended {
             rule.and_then(|r| (r.rec_t >= 0).then_some(r.rec_t == 1))
@@ -3232,39 +3251,40 @@ fn option_label_from_index(item: &CatalogItem, index: i32) -> Option<String> {
 }
 
 fn detect_all_states_parallel() -> HashMap<i32, (bool, i32)> {
-    let scheduled_task_cache = std::sync::Arc::new(load_scheduled_task_states());
-    let items = catalog().to_vec();
+    let scheduled_task_cache = SCHEDULED_TASK_CACHE
+        .get_or_init(|| Arc::new(load_scheduled_task_states()))
+        .clone();
+    let items: Vec<&'static CatalogItem> = catalog().iter().collect();
     let worker_count = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4)
         .clamp(2, 8)
         .min(items.len().max(1));
     let chunk_size = items.len().div_ceil(worker_count).max(1);
-    let mut handles = Vec::new();
-
-    for chunk in items.chunks(chunk_size) {
-        let chunk = chunk.to_vec();
-        let scheduled_task_cache = scheduled_task_cache.clone();
-        handles.push(std::thread::spawn(move || {
-            let mut partial = Vec::with_capacity(chunk.len());
-            for item in chunk {
-                partial.push((
-                    item.num_id,
-                    detect_item_state_with_cache(&item, &scheduled_task_cache),
-                ));
-            }
-            partial
-        }));
-    }
-
     let mut map = HashMap::new();
-    for handle in handles {
-        if let Ok(partial) = handle.join() {
+    std::thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for chunk in items.chunks(chunk_size) {
+            let scheduled_task_cache = scheduled_task_cache.clone();
+            handles.push(scope.spawn(move || {
+                let mut partial = Vec::with_capacity(chunk.len());
+                for item in chunk {
+                    partial.push((
+                        item.num_id,
+                        detect_item_state_with_cache(item, &scheduled_task_cache),
+                    ));
+                }
+                partial
+            }));
+        }
+
+        for handle in handles {
+            let partial = handle.join().unwrap_or_default();
             for (id, state) in partial {
                 map.insert(id, state);
             }
         }
-    }
+    });
     map
 }
 
@@ -3274,7 +3294,7 @@ fn detect_item_state_with_cache(
 ) -> (bool, i32) {
     if item.input_type == 0 {
         let enabled =
-            detect_gaming_tweak_with_task_cache(item.num_id, scheduled_task_cache).unwrap_or(false);
+            detect_gaming_tweak_with_task_cache_item(item, scheduled_task_cache).unwrap_or(false);
         return (enabled, if enabled { 1 } else { 0 });
     }
     let selected = detect_selection_index(item).unwrap_or(0);
@@ -3283,7 +3303,7 @@ fn detect_item_state_with_cache(
 
 fn detect_item_state(item: &CatalogItem) -> (bool, i32) {
     if item.input_type == 0 {
-        let enabled = detect_gaming_tweak(item.num_id).unwrap_or(false);
+        let enabled = detect_gaming_tweak_item(item).unwrap_or(false);
         return (enabled, if enabled { 1 } else { 0 });
     }
     let selected = detect_selection_index(item).unwrap_or(0);
@@ -3291,7 +3311,12 @@ fn detect_item_state(item: &CatalogItem) -> (bool, i32) {
 }
 
 fn detect_gaming_tweak(id: i32) -> Option<bool> {
-    let key = canonical_key(item_by_num_id(id)?.key.as_str());
+    let item = item_by_num_id(id)?;
+    detect_gaming_tweak_item(item)
+}
+
+fn detect_gaming_tweak_item(item: &CatalogItem) -> Option<bool> {
+    let key = canonical_key(item.key);
     if let Some(task_path) = scheduled_task_for_key(key) {
         return get_scheduled_task_enabled(task_path);
     }
@@ -3337,8 +3362,7 @@ fn detect_gaming_tweak(id: i32) -> Option<bool> {
             directx_user_global_settings_state("gaming-directx-flip-model").unwrap_or(false)
         }
         "gaming-directx-vrr-optimizations" => {
-            directx_user_global_settings_state("gaming-directx-vrr-optimizations")
-                .unwrap_or(false)
+            directx_user_global_settings_state("gaming-directx-vrr-optimizations").unwrap_or(false)
         }
         "gaming-directx-auto-hdr" => {
             directx_user_global_settings_state("gaming-directx-auto-hdr").unwrap_or(false)
@@ -3366,22 +3390,22 @@ fn detect_gaming_tweak(id: i32) -> Option<bool> {
     Some(result)
 }
 
-fn detect_gaming_tweak_with_task_cache(
-    id: i32,
+fn detect_gaming_tweak_with_task_cache_item(
+    item: &CatalogItem,
     scheduled_task_cache: &HashMap<String, bool>,
 ) -> Option<bool> {
-    let key = canonical_key(item_by_num_id(id)?.key.as_str());
+    let key = canonical_key(item.key);
     if let Some(task_path) = scheduled_task_for_key(key) {
         return scheduled_task_cache.get(task_path).copied();
     }
-    detect_gaming_tweak(id)
+    detect_gaming_tweak_item(item)
 }
 
 fn load_scheduled_task_states() -> HashMap<String, bool> {
     const CREATE_NO_WINDOW: u32 = 0x08000000;
     let paths: Vec<&str> = catalog()
         .iter()
-        .filter_map(|item| scheduled_task_for_key(canonical_key(item.key.as_str())))
+        .filter_map(|item| scheduled_task_for_key(canonical_key(item.key)))
         .collect();
     if paths.is_empty() {
         return HashMap::new();
@@ -3521,7 +3545,11 @@ fn set_directx_user_global_settings_flag(key: &str, enabled: bool) {
 
     let raw = directx_user_global_settings_value();
     let mut flags: HashMap<String, String> = HashMap::new();
-    for part in raw.split(';').map(str::trim).filter(|part| !part.is_empty()) {
+    for part in raw
+        .split(';')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
         if let Some((name, value)) = part.split_once('=') {
             flags.insert(name.trim().to_string(), value.trim().to_string());
         } else {
@@ -3557,7 +3585,7 @@ fn set_directx_user_global_settings_flag(key: &str, enabled: bool) {
 
 fn apply_gaming_tweak(id: i32, enabled: bool) {
     if let Some(item) = item_by_num_id(id) {
-        let key = canonical_key(item.key.as_str());
+        let key = canonical_key(item.key);
         if let Some(task_path) = scheduled_task_for_key(key) {
             set_scheduled_task_enabled(task_path, enabled);
         }
@@ -3601,7 +3629,8 @@ fn apply_gaming_tweak(id: i32, enabled: bool) {
                 "WholeFileSystem",
                 if enabled { Some(1) } else { Some(0) },
             ),
-            "gaming-directx-flip-model" | "gaming-directx-vrr-optimizations"
+            "gaming-directx-flip-model"
+            | "gaming-directx-vrr-optimizations"
             | "gaming-directx-auto-hdr" => set_directx_user_global_settings_flag(key, enabled),
             "gaming-performance-search-webview2" => {
                 let path =
@@ -3632,7 +3661,7 @@ fn apply_gaming_tweak(id: i32, enabled: bool) {
                 "MenuShowDelay",
                 if enabled { Some("400") } else { Some("0") },
             ),
-            _ => apply_toggle_by_registry_rules(item.key.as_str(), enabled),
+            _ => apply_toggle_by_registry_rules(item.key, enabled),
         }
     }
 
@@ -3745,7 +3774,7 @@ fn set_scheduled_task_enabled(full_path: &str, enabled: bool) {
 
 fn apply_gaming_selection_option(id: i32, option_index: i32) {
     if let Some(item) = item_by_num_id(id) {
-        match item.key.as_str() {
+        match item.key {
             "gaming-performance-mouse-hover-time" => {
                 if let Some(value) = item
                     .options
@@ -3979,7 +4008,7 @@ fn apply_rule_value(rule: &RawRegRule, token: &str) {
 }
 
 fn detect_selection_index(item: &CatalogItem) -> Option<i32> {
-    match item.key.as_str() {
+    match item.key {
         "gaming-performance-mouse-hover-time" => {
             let v = read_string(HKEY_CURRENT_USER, r"Control Panel\Mouse", "MouseHoverTime")?;
             let idx = match v.trim() {
@@ -4056,14 +4085,14 @@ fn detect_selection_index(item: &CatalogItem) -> Option<i32> {
 }
 
 fn detect_service_selection_index(item: &CatalogItem) -> Option<i32> {
-    let svc = service_name_for_key(item.key.as_str())?;
+    let svc = service_name_for_key(item.key)?;
     let current = read_dword(
         HKEY_LOCAL_MACHINE,
         &format!(r"SYSTEM\CurrentControlSet\Services\{}", svc),
         "Start",
     )?;
     for (i, _) in item.options.iter().enumerate() {
-        if let Some(expected) = service_start_from_option_index(item.key.as_str(), i as i32)
+        if let Some(expected) = service_start_from_option_index(item.key, i as i32)
             && current == expected
         {
             return Some(i as i32);
@@ -4073,8 +4102,7 @@ fn detect_service_selection_index(item: &CatalogItem) -> Option<i32> {
 }
 
 fn apply_service_start_by_option(service_name: &str, item: &CatalogItem, option_index: i32) {
-    if let Some(start) = service_start_from_option_index(item.key.as_str(), option_index)
-    {
+    if let Some(start) = service_start_from_option_index(item.key, option_index) {
         write_dword(
             HKEY_LOCAL_MACHINE,
             &format!(r"SYSTEM\CurrentControlSet\Services\{}", service_name),
@@ -4208,11 +4236,22 @@ fn apply_dns_option(option_index: i32) {
 }
 
 pub fn reload_gaming_tweaks_filtered(query: &str) -> [Vec<GamingTweakRow>; 10] {
-    let states = detect_all_states_parallel();
-    if let Ok(mut m) = STATE_CACHE.lock() {
-        *m = states;
+    let has_cache = STATE_CACHE.lock().ok().is_some_and(|m| !m.is_empty());
+    if !has_cache {
+        let states = detect_all_states_parallel();
+        if let Ok(mut m) = STATE_CACHE.lock() {
+            *m = states;
+        }
+        return build_grouped_rows_filtered(query);
     }
-    build_grouped_rows_filtered(query)
+    let q = query.trim().to_ascii_lowercase();
+    let cached = STATE_CACHE.lock().ok();
+    build_grouped_rows_from(cached.as_deref(), false, Some(&q))
+}
+
+pub fn preview_gaming_tweaks(query: &str) -> [Vec<GamingTweakRow>; 10] {
+    let q = query.trim().to_ascii_lowercase();
+    build_grouped_rows_from(None, false, Some(&q))
 }
 
 pub fn toggle_gaming_tweak_state(id: i32, enabled: bool) {
@@ -4241,11 +4280,11 @@ pub fn apply_gaming_tweak_default_state(id: i32) {
 
 pub fn toggle_gaming_expand_state(id: i32) {
     if let Some(item) = item_by_num_id(id)
-        && has_children(item.key.as_str())
+        && has_children(item.key)
         && let Ok(mut m) = PERF_EXPANDED.lock()
     {
-        let current = *m.get(item.key.as_str()).unwrap_or(&true);
-        m.insert(item.key.clone(), !current);
+        let current = *m.get(item.key).unwrap_or(&true);
+        m.insert(item.key, !current);
     }
 }
 
@@ -4371,7 +4410,7 @@ mod tests {
     fn selection_label_falls_back_to_current_option_text() {
         let item = CatalogItem {
             num_id: 0,
-            key: "custom-selection".to_string(),
+            key: "custom-selection",
             name: String::new(),
             desc: String::new(),
             desc_lc: String::new(),
@@ -4396,7 +4435,7 @@ mod tests {
     fn profile_target_label_uses_current_option_as_fallback() {
         let item = CatalogItem {
             num_id: 0,
-            key: "gaming-background-apps".to_string(),
+            key: "gaming-background-apps",
             name: String::new(),
             desc: String::new(),
             desc_lc: String::new(),

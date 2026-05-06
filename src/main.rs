@@ -17,6 +17,7 @@ use std::path::PathBuf;
 pub struct GamingTweakRow {
     pub tweak_id: i32,
     pub category: i32,
+    pub key: &'static str,
     pub name: String,
     pub description: String,
     pub enabled: bool,

@@ -52,7 +52,9 @@ impl WinchiselApp {
         if self.performance_load_worker.is_some() {
             return;
         }
-        self.state.performance.performance_loaded = false;
+        self.state.performance.performance_groups =
+            performance::preview_gaming_tweaks(&self.state.performance.performance_query);
+        self.state.performance.performance_loaded = true;
         let (worker, loading) =
             Self::spawn_performance_worker(&self.state.performance.performance_query);
         self.performance_load_worker = worker;
@@ -101,7 +103,7 @@ impl WinchiselApp {
             .unwrap_or("Performance")
     }
 
-    pub(crate) fn render_performance_row(&mut self, ui: &mut egui::Ui, row: GamingTweakRow) {
+    pub(crate) fn render_performance_row(&mut self, ui: &mut egui::Ui, row: &GamingTweakRow) {
         let editable = row.is_editable;
         let row_color = if editable {
             egui::Color32::from_rgb(23, 23, 25)
@@ -297,6 +299,7 @@ impl WinchiselApp {
                     ui.heading("Performance");
                     ui.label("Gaming and Performance Tweaks");
                 });
+                ui.add_space(12.0);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let response = ui.add_sized(
                         [280.0, 30.0],
@@ -306,12 +309,40 @@ impl WinchiselApp {
                     if response.changed() {
                         self.refresh_performance_groups();
                     }
+                    ui.add_space(10.0);
+                    let quick_index = self.state.performance.performance_quick_action_index;
+                    let selected_text = match quick_index {
+                        1 => "Apply Recommended Settings",
+                        2 => "Reset to Windows Defaults",
+                        _ => "Quick Actions",
+                    };
+                    let mut chosen_index = quick_index;
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(220.0, 30.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.scope(|ui| {
+                                ui.style_mut().spacing.interact_size.y = 30.0;
+                                egui::ComboBox::from_id_salt("performance_quick_actions")
+                                    .width(220.0)
+                                    .selected_text(selected_text)
+                                    .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut chosen_index, 0, "Quick Actions");
+                                    ui.selectable_value(&mut chosen_index, 1, "Apply Recommended Settings");
+                                    ui.selectable_value(&mut chosen_index, 2, "Reset to Windows Defaults");
+                                    });
+                            });
+                        },
+                    );
+                    if chosen_index != quick_index {
+                        self.state.performance.performance_quick_action_index = chosen_index;
+                        if chosen_index > 0 {
+                            self.request_performance_action(chosen_index);
+                            self.state.performance.performance_quick_action_index = 0;
+                        }
+                    }
                 });
             });
-
-            ui.add_space(12.0);
-            ui.separator();
-            ui.add_space(12.0);
 
             if !self.state.performance.performance_loaded {
                 ui.add_space(40.0);
@@ -322,32 +353,6 @@ impl WinchiselApp {
                 });
                 ui.add_space(40.0);
             } else {
-                ui.horizontal(|ui| {
-                    let quick_index = self.state.performance.performance_quick_action_index;
-                    let selected_text = match quick_index {
-                        1 => "Apply Recommended Settings",
-                        2 => "Reset to Windows Defaults",
-                        _ => "Quick Actions",
-                    };
-                    let mut chosen_index = quick_index;
-                    egui::ComboBox::from_id_salt("performance_quick_actions")
-                        .width(220.0)
-                        .selected_text(selected_text)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut chosen_index, 0, "Quick Actions");
-                            ui.selectable_value(&mut chosen_index, 1, "Apply Recommended Settings");
-                            ui.selectable_value(&mut chosen_index, 2, "Reset to Windows Defaults");
-                        });
-                    if chosen_index != quick_index {
-                        self.state.performance.performance_quick_action_index = chosen_index;
-                        if chosen_index > 0 {
-                            self.request_performance_action(chosen_index);
-                            self.state.performance.performance_quick_action_index = 0;
-                        }
-                    }
-                });
-
-                ui.add_space(10.0);
                 ui.separator();
                 ui.add_space(10.0);
 
@@ -362,40 +367,44 @@ impl WinchiselApp {
                                 if rules.is_empty() {
                                     continue;
                                 }
-                                ui.add_space(4.0);
-                                ui.label(
+                                egui::CollapsingHeader::new(
                                     egui::RichText::new(Self::performance_group_label(group_idx))
                                         .strong()
-                                        .size(12.0)
+                                        .size(15.0)
                                         .color(egui::Color32::from_rgb(149, 194, 255)),
-                                );
-                                ui.add_space(8.0);
-                                for row in rules.iter() {
-                                    self.render_performance_row(ui, row.clone());
-                                    if group_idx == 6 && !row.warning_text.is_empty() {
-                                        ui.add_space(6.0);
-                                        Self::card_frame()
-                                            .fill(egui::Color32::from_rgb(64, 54, 20))
-                                            .stroke(egui::Stroke::new(
-                                                1.0,
-                                                egui::Color32::from_rgb(181, 149, 38),
-                                            ))
-                                            .corner_radius(6.0)
-                                            .show(ui, |ui| {
-                                                ui.horizontal_wrapped(|ui| {
-                                                    ui.colored_label(
-                                                        egui::Color32::from_rgb(255, 216, 102),
-                                                        "!",
-                                                    );
-                                                    ui.colored_label(
-                                                        egui::Color32::from_rgb(255, 236, 179),
-                                                        &row.warning_text,
-                                                    );
+                                )
+                                .id_salt(("performance_group", group_idx))
+                                .default_open(true)
+                                .show(ui, |ui| {
+                                    ui.add_space(8.0);
+                                    for row in rules.iter() {
+                                        self.render_performance_row(ui, row);
+                                        if group_idx == 6 && !row.warning_text.is_empty() {
+                                            ui.add_space(6.0);
+                                            Self::card_frame()
+                                                .fill(egui::Color32::from_rgb(64, 54, 20))
+                                                .stroke(egui::Stroke::new(
+                                                    1.0,
+                                                    egui::Color32::from_rgb(181, 149, 38),
+                                                ))
+                                                .corner_radius(6.0)
+                                                .show(ui, |ui| {
+                                                    ui.horizontal_wrapped(|ui| {
+                                                        ui.colored_label(
+                                                            egui::Color32::from_rgb(255, 216, 102),
+                                                            "!",
+                                                        );
+                                                        ui.colored_label(
+                                                            egui::Color32::from_rgb(255, 236, 179),
+                                                            &row.warning_text,
+                                                        );
+                                                    });
                                                 });
-                                            });
+                                        }
+                                        ui.add_space(8.0);
                                     }
                                     ui.add_space(8.0);
-                                }
+                                });
                             }
                         });
                 }

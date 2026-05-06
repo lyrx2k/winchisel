@@ -4,28 +4,30 @@ use egui_extras::{Column, TableBuilder};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
+
+static CPU_SORT_STATE: LazyLock<Mutex<(CpuSortColumn, bool)>> =
+    LazyLock::new(|| Mutex::new((CpuSortColumn::Name, true)));
 
 #[derive(Clone)]
 pub(crate) struct CpuState {
     pub(crate) cpu_filter_active_only: bool,
-    pub(crate) cpu_refresh_interval_index: usize,
     pub(crate) cpu_visible_count: usize,
     pub(crate) cpu_total_usage: String,
     pub(crate) cpu_processes_all: Vec<CpuProcessRow>,
     pub(crate) cpu_processes: Vec<CpuProcessRow>,
     pub(crate) cpu_selected_pid: i32,
     pub(crate) cpu_selected_name: String,
-    pub(crate) cpu_open_pid: i32,
-    pub(crate) io_open_pid: i32,
-    pub(crate) affinity_open_pid: i32,
     pub(crate) cpu_affinity_dialog_visible: bool,
     pub(crate) cpu_affinity_dialog_pid: i32,
     pub(crate) cpu_affinity_dialog_name: String,
     pub(crate) cpu_affinity_dialog_mask: String,
     pub(crate) cpu_affinity_cores: Vec<CpuAffinityCoreRow>,
     pub(crate) cpu_last_refresh: Option<Instant>,
+    pub(crate) cpu_reload_ready_at: Option<Instant>,
     pub(crate) cpu_reload_pending: bool,
+    pub(crate) cpu_last_error: Option<String>,
     pub(crate) cpu_pending_action: Option<CpuAction>,
     pub(crate) cpu_realtime_confirm_visible: bool,
     pub(crate) cpu_realtime_pending_pid: i32,
@@ -40,6 +42,7 @@ pub(crate) struct CpuProcessRow {
     pub(crate) has_children: bool,
     pub(crate) expanded: bool,
     pub(crate) name: String,
+    pub(crate) name_lc: String,
     pub(crate) cpu: String,
     pub(crate) priority: String,
     pub(crate) affinity: String,
@@ -66,6 +69,16 @@ pub(crate) struct CpuAffinityCoreRow {
     pub(crate) label: String,
     pub(crate) checked: bool,
     pub(crate) enabled: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CpuSortColumn {
+    Pid,
+    Name,
+    Cpu,
+    Priority,
+    Affinity,
+    Status,
 }
 
 pub(crate) struct CpuLoadResult {
@@ -102,6 +115,8 @@ impl WinchiselApp {
             return;
         }
         self.state.cpu.cpu_reload_pending = true;
+        self.state.cpu.cpu_reload_ready_at =
+            Some(Instant::now() + Duration::from_millis(200));
     }
 
     pub(crate) fn queue_cpu_action(&mut self, action: CpuAction) {
@@ -155,18 +170,6 @@ impl WinchiselApp {
         }
     }
 
-    pub(crate) fn cpu_refresh_interval(&self) -> Option<Duration> {
-        match self.state.cpu.cpu_refresh_interval_index {
-            0 => None,
-            1 => Some(Duration::from_secs(1)),
-            2 => Some(Duration::from_secs(2)),
-            3 => Some(Duration::from_secs(5)),
-            4 => Some(Duration::from_secs(10)),
-            5 => Some(Duration::from_secs(30)),
-            _ => None,
-        }
-    }
-
     pub(crate) fn toggle_cpu_tree(pid: i32) {
         if let Ok(mut set_opt) = CPU_TREE_EXPANDED.lock() {
             let set = set_opt.get_or_insert_with(HashSet::new);
@@ -176,12 +179,50 @@ impl WinchiselApp {
         }
     }
 
+    pub(crate) fn set_cpu_sort(column: CpuSortColumn) {
+        if let Ok(mut state) = CPU_SORT_STATE.lock() {
+            if state.0 == column {
+                state.1 = !state.1;
+            } else {
+                *state = (column, true);
+            }
+        }
+    }
+
+    pub(crate) fn cpu_sort_state() -> (CpuSortColumn, bool) {
+        CPU_SORT_STATE
+            .lock()
+            .ok()
+            .map(|s| *s)
+            .unwrap_or((CpuSortColumn::Name, true))
+    }
+
     pub(crate) fn rebuild_cpu_visible_rows(&mut self) {
         self.state.cpu.cpu_processes = Self::build_cpu_tree_rows(
-            self.state.cpu.cpu_processes_all.clone(),
+            &self.state.cpu.cpu_processes_all,
             self.state.cpu.cpu_filter_active_only,
         );
         self.state.cpu.cpu_visible_count = self.state.cpu.cpu_processes.len();
+        self.retain_cpu_selection();
+    }
+
+    fn retain_cpu_selection(&mut self) {
+        let selected_pid = self.state.cpu.cpu_selected_pid;
+        if selected_pid <= 0 {
+            return;
+        }
+        if let Some(row) = self
+            .state
+            .cpu
+            .cpu_processes
+            .iter()
+            .find(|r| r.pid == selected_pid)
+        {
+            self.state.cpu.cpu_selected_name = row.name.clone();
+        } else {
+            self.state.cpu.cpu_selected_pid = -1;
+            self.state.cpu.cpu_selected_name.clear();
+        }
     }
 
     pub(crate) fn open_affinity_editor(&mut self, pid: i32, name: String) {
@@ -376,16 +417,22 @@ impl WinchiselApp {
         };
         match worker.rx.try_recv() {
             Ok(result) => {
+                let now = Instant::now();
                 self.state.cpu.cpu_visible_count = result.rows.len();
                 self.state.cpu.cpu_total_usage = format!("{:.1}%", result.total_cpu);
                 self.state.cpu.cpu_processes_all = result.all_rows;
                 self.state.cpu.cpu_processes = result.rows;
-                self.state.cpu.cpu_last_refresh = Some(Instant::now());
+                self.state.cpu.cpu_last_refresh = Some(now);
                 self.state.cpu.cpu_reload_pending = false;
+                self.state.cpu.cpu_last_error = None;
+                self.retain_cpu_selection();
                 self.cpu_load_worker = None;
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
+                self.state.cpu.cpu_last_error = Some("Process scan failed".to_string());
+                self.state.cpu.cpu_reload_pending = false;
+                self.state.cpu.cpu_reload_ready_at = None;
                 self.cpu_load_worker = None;
             }
         }
@@ -409,35 +456,32 @@ impl WinchiselApp {
                 has_children: false,
                 expanded: false,
                 name: p.name().to_string_lossy().into_owned(),
+                name_lc: p.name().to_string_lossy().to_lowercase(),
                 cpu: format!("{:.1}%", p.cpu_usage()),
                 priority: cpu_get_process_priority_label(pid.as_u32() as i32),
                 affinity: cpu_get_process_affinity_label(pid.as_u32() as i32),
                 status: format!("{:?}", p.status()),
             })
             .collect();
+        let rows_tree = Self::build_cpu_tree_rows(&rows, active_only);
         CpuLoadResult {
-            all_rows: rows.clone(),
-            rows: Self::build_cpu_tree_rows(rows, active_only),
+            all_rows: rows,
+            rows: rows_tree,
             total_cpu,
         }
     }
 
-    fn build_cpu_tree_rows(rows: Vec<CpuProcessRow>, active_only: bool) -> Vec<CpuProcessRow> {
+    fn build_cpu_tree_rows(rows: &[CpuProcessRow], active_only: bool) -> Vec<CpuProcessRow> {
         let mut by_pid: HashMap<i32, CpuProcessRow> = HashMap::new();
         let mut children: HashMap<i32, Vec<i32>> = HashMap::new();
-        for row in rows {
+        for row in rows.iter().cloned() {
             if row.ppid != row.pid {
                 children.entry(row.ppid).or_default().push(row.pid);
             }
             by_pid.insert(row.pid, row);
         }
-        for bucket in children.values_mut() {
-            bucket.sort_by(|a, b| {
-                let an = by_pid.get(a).map(|r| r.name.to_lowercase()).unwrap_or_default();
-                let bn = by_pid.get(b).map(|r| r.name.to_lowercase()).unwrap_or_default();
-                an.cmp(&bn)
-            });
-        }
+        let (sort_column, ascending) = Self::cpu_sort_state();
+        Self::sort_cpu_children(&mut children, &by_pid, sort_column, ascending);
         let expanded = CPU_TREE_EXPANDED
             .lock()
             .ok()
@@ -454,11 +498,7 @@ impl WinchiselApp {
             .filter(|r| r.ppid <= 0 || !by_pid.contains_key(&r.ppid))
             .map(|r| r.pid)
             .collect();
-        roots.sort_by(|a, b| {
-            let an = by_pid.get(a).map(|r| r.name.to_lowercase()).unwrap_or_default();
-            let bn = by_pid.get(b).map(|r| r.name.to_lowercase()).unwrap_or_default();
-            an.cmp(&bn)
-        });
+        Self::sort_cpu_pids(&mut roots, &by_pid, sort_column, ascending);
 
         let mut out = Vec::new();
         for pid in roots {
@@ -479,6 +519,42 @@ impl WinchiselApp {
         }
         out.truncate(1000);
         out
+    }
+
+    fn sort_cpu_children(
+        children: &mut HashMap<i32, Vec<i32>>,
+        by_pid: &HashMap<i32, CpuProcessRow>,
+        sort_column: CpuSortColumn,
+        ascending: bool,
+    ) {
+        for bucket in children.values_mut() {
+            Self::sort_cpu_pids(bucket, by_pid, sort_column, ascending);
+        }
+    }
+
+    fn sort_cpu_pids(
+        pids: &mut Vec<i32>,
+        by_pid: &HashMap<i32, CpuProcessRow>,
+        sort_column: CpuSortColumn,
+        ascending: bool,
+    ) {
+        pids.sort_by(|a, b| {
+            let ra = by_pid.get(a);
+            let rb = by_pid.get(b);
+            let ord = match sort_column {
+                CpuSortColumn::Pid => a.cmp(b),
+                CpuSortColumn::Name => ra
+                    .map(|r| r.name_lc.as_str())
+                    .cmp(&rb.map(|r| r.name_lc.as_str())),
+                CpuSortColumn::Cpu => Self::cpu_value(ra)
+                    .partial_cmp(&Self::cpu_value(rb))
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                CpuSortColumn::Priority => ra.map(|r| r.priority.as_str()).cmp(&rb.map(|r| r.priority.as_str())),
+                CpuSortColumn::Affinity => ra.map(|r| r.affinity.as_str()).cmp(&rb.map(|r| r.affinity.as_str())),
+                CpuSortColumn::Status => ra.map(|r| r.status.as_str()).cmp(&rb.map(|r| r.status.as_str())),
+            };
+            if ascending { ord } else { ord.reverse() }
+        });
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -503,34 +579,36 @@ impl WinchiselApp {
             path.remove(&pid);
             return;
         }
-        let kids = children.get(&pid).cloned().unwrap_or_default();
         row.depth = depth;
-        row.has_children = !kids.is_empty();
+        let kids = children.get(&pid);
+        row.has_children = kids.is_some_and(|k| !k.is_empty());
         row.expanded = expanded.contains(&pid);
         out.push(row);
-        if out.len() >= 1000 || kids.is_empty() || expanded.contains(&pid) {
+        if out.len() >= 1000 || kids.is_none_or(|k| k.is_empty()) || expanded.contains(&pid) {
             path.remove(&pid);
             return;
         }
-        for child in kids {
-            Self::flatten_cpu_tree(
-                child,
-                depth + 1,
-                children,
-                by_pid,
-                expanded,
-                active_set,
-                path,
-                out,
-            );
-            if out.len() >= 1000 {
-                break;
+        if let Some(kids) = kids {
+            for &child in kids {
+                Self::flatten_cpu_tree(
+                    child,
+                    depth + 1,
+                    children,
+                    by_pid,
+                    expanded,
+                    active_set,
+                    path,
+                    out,
+                );
+                if out.len() >= 1000 {
+                    break;
+                }
             }
         }
         path.remove(&pid);
     }
 
-    fn compute_active_cpu_set(
+fn compute_active_cpu_set(
         by_pid: &HashMap<i32, CpuProcessRow>,
         children: &HashMap<i32, Vec<i32>>,
     ) -> HashSet<i32> {
@@ -561,80 +639,91 @@ impl WinchiselApp {
                 }
             }
         }
-        active
+    active
+}
+
+    fn cpu_value(row: Option<&CpuProcessRow>) -> f32 {
+        row.and_then(|r| r.cpu.trim_end_matches('%').parse::<f32>().ok())
+            .unwrap_or(0.0)
     }
 
     pub(crate) fn render_processes_tab(&mut self, ui: &mut egui::Ui) {
-        Self::page_shell(
-            ui,
-            "Processes",
-            "Inspect processes, affinity and priority settings.",
-            |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(format!("Visible: {}", self.state.cpu.cpu_visible_count));
-                    ui.separator();
-                    ui.label(format!("Total CPU: {}", self.state.cpu.cpu_total_usage));
-                    ui.separator();
-                    let changed = ui
-                        .checkbox(&mut self.state.cpu.cpu_filter_active_only, "Active only")
-                        .changed();
-                    if changed {
-                        self.request_cpu_reload();
-                        ui.ctx().request_repaint();
-                    }
-                    ui.separator();
-                    egui::ComboBox::from_id_salt("cpu_refresh_interval")
-                        .width(140.0)
-                        .selected_text(match self.state.cpu.cpu_refresh_interval_index {
-                            0 => "Off",
-                            1 => "1 sec",
-                            2 => "2 sec",
-                            3 => "5 sec",
-                            4 => "10 sec",
-                            5 => "30 sec",
-                            _ => "2 sec",
-                        })
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.state.cpu.cpu_refresh_interval_index,
-                                0,
-                                "Off",
-                            );
-                            ui.selectable_value(
-                                &mut self.state.cpu.cpu_refresh_interval_index,
-                                1,
-                                "1 sec",
-                            );
-                            ui.selectable_value(
-                                &mut self.state.cpu.cpu_refresh_interval_index,
-                                2,
-                                "2 sec",
-                            );
-                            ui.selectable_value(
-                                &mut self.state.cpu.cpu_refresh_interval_index,
-                                3,
-                                "5 sec",
-                            );
-                            ui.selectable_value(
-                                &mut self.state.cpu.cpu_refresh_interval_index,
-                                4,
-                                "10 sec",
-                            );
-                            ui.selectable_value(
-                                &mut self.state.cpu.cpu_refresh_interval_index,
-                                5,
-                                "30 sec",
-                            );
-                        });
-                    if ui.button("Refresh").clicked() {
-                        self.request_cpu_reload();
-                        ui.ctx().request_repaint();
-                    }
-                });
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.heading("Processes");
+                ui.label("Inspect processes, affinity and priority settings.");
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let loading = self.cpu_load_worker.is_some();
+                let button = egui::Button::new("Refresh")
+                    .fill(egui::Color32::from_rgb(35, 88, 55))
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(72, 145, 92)));
+                let response = ui.add_sized([120.0, 34.0], button);
+                if loading {
+                    let spinner_rect = egui::Rect::from_min_size(
+                        response.rect.left_center() + egui::vec2(8.0, -8.0),
+                        egui::vec2(14.0, 14.0),
+                    );
+                    ui.put(spinner_rect, egui::Spinner::new().size(12.0));
+                }
+                if response.clicked() && !loading {
+                    self.request_cpu_reload();
+                    ui.ctx().request_repaint();
+                }
+            });
+        });
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            ui.label(format!("Visible: {}", self.state.cpu.cpu_visible_count));
+            ui.separator();
+            ui.label(format!("Total CPU: {}", self.state.cpu.cpu_total_usage));
+            ui.separator();
+            let mut active_only = self.state.cpu.cpu_filter_active_only;
+            ui.horizontal(|ui| {
+                let resp = ui
+                    .add_enabled_ui(true, |ui| Self::native_toggle_switch(ui, &mut active_only))
+                    .inner;
+                if resp.changed() {
+                    self.state.cpu.cpu_filter_active_only = active_only;
+                    self.request_cpu_reload();
+                    ui.ctx().request_repaint();
+                }
+                let label = if active_only {
+                    egui::RichText::new("Active only")
+                        .strong()
+                        .color(egui::Color32::from_rgb(96, 181, 103))
+                } else {
+                    egui::RichText::new("Active only")
+                        .color(egui::Color32::from_rgb(210, 80, 80))
+                };
+                ui.label(label);
+            });
+            ui.separator();
+            if self.cpu_load_worker.is_some() {
+                ui.add(egui::Spinner::new().size(16.0));
+                ui.add_space(6.0);
+                ui.colored_label(
+                    egui::Color32::from_rgb(149, 194, 255),
+                    "Refreshing process list...",
+                );
+            } else if let Some(err) = self.state.cpu.cpu_last_error.as_ref() {
+                ui.colored_label(egui::Color32::from_rgb(210, 80, 80), err);
+            } else if let Some(last) = self.state.cpu.cpu_last_refresh {
+                let elapsed = last.elapsed();
+                ui.label(format!("Last refresh: {}s ago", elapsed.as_secs()));
+            } else {
+                ui.label("Waiting for first refresh...");
+            }
+            if self.state.cpu.cpu_reload_pending {
+                ui.separator();
+                ui.label("Reload queued");
+            }
+        });
 
-                ui.add_space(10.0);
+        ui.add_space(10.0);
 
-                TableBuilder::new(ui)
+        TableBuilder::new(ui)
                     .striped(true)
                     .resizable(true)
                     .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
@@ -645,24 +734,24 @@ impl WinchiselApp {
                     .column(Column::exact(92.0))
                     .column(Column::exact(72.0))
                     .header(22.0, |mut header| {
-                        header.col(|ui| {
-                            ui.strong("PID");
-                        });
-                        header.col(|ui| {
-                            ui.strong("Name");
-                        });
-                        header.col(|ui| {
-                            ui.strong("CPU %");
-                        });
-                        header.col(|ui| {
-                            ui.strong("Priority");
-                        });
-                        header.col(|ui| {
-                            ui.strong("Affinity");
-                        });
-                        header.col(|ui| {
-                            ui.strong("Status");
-                        });
+                        let (sort_column, ascending) = Self::cpu_sort_state();
+                        let mut header_button =
+                            |ui: &mut egui::Ui, label: &str, column: CpuSortColumn| {
+                            let mut text = label.to_string();
+                            if sort_column == column {
+                                text.push_str(if ascending { " ↑" } else { " ↓" });
+                            }
+                            if ui.button(text).clicked() {
+                                Self::set_cpu_sort(column);
+                                self.rebuild_cpu_visible_rows();
+                            }
+                        };
+                        header.col(|ui| header_button(ui, "PID", CpuSortColumn::Pid));
+                        header.col(|ui| header_button(ui, "Name", CpuSortColumn::Name));
+                        header.col(|ui| header_button(ui, "CPU %", CpuSortColumn::Cpu));
+                        header.col(|ui| header_button(ui, "Priority", CpuSortColumn::Priority));
+                        header.col(|ui| header_button(ui, "Affinity", CpuSortColumn::Affinity));
+                        header.col(|ui| header_button(ui, "Status", CpuSortColumn::Status));
                     })
                     .body(|body| {
                         body.rows(26.0, self.state.cpu.cpu_processes.len(), |mut row| {
@@ -873,9 +962,6 @@ impl WinchiselApp {
                         ui.add_space(8.0);
                     });
                 }
-            },
-        );
-
         if self.state.cpu.cpu_realtime_confirm_visible {
             egui::Window::new("Set Realtime Priority?")
                 .collapsible(false)
@@ -1022,38 +1108,37 @@ fn cpu_get_process_affinity_label(pid: i32) -> String {
             return "Unknown".to_string();
         }
 
-        let mut cores: Vec<usize> = Vec::new();
-        let mut i = 0usize;
-        while i < (usize::BITS as usize) {
-            if (process_mask & (1usize << i)) != 0 {
-                cores.push(i);
-            }
-            i += 1;
-        }
-        if cores.is_empty() {
-            return "Unknown".to_string();
-        }
-
         let mut parts: Vec<String> = Vec::new();
-        let mut start = cores[0];
-        let mut prev = cores[0];
-        for &c in cores.iter().skip(1) {
-            if c == prev + 1 {
-                prev = c;
-                continue;
+        let mut start: Option<usize> = None;
+        let mut prev: Option<usize> = None;
+        for i in 0..(usize::BITS as usize) {
+            let bit_set = (process_mask & (1usize << i)) != 0;
+            match (start, prev, bit_set) {
+                (None, _, true) => {
+                    start = Some(i);
+                    prev = Some(i);
+                }
+                (Some(_), Some(p), true) if i == p + 1 => {
+                    prev = Some(i);
+                }
+                (Some(s), Some(p), false) => {
+                    if s == p {
+                        parts.push(format!("{}", s));
+                    } else {
+                        parts.push(format!("{}-{}", s, p));
+                    }
+                    start = None;
+                    prev = None;
+                }
+                _ => {}
             }
-            if start == prev {
-                parts.push(format!("{}", start));
-            } else {
-                parts.push(format!("{}-{}", start, prev));
-            }
-            start = c;
-            prev = c;
         }
-        if start == prev {
-            parts.push(format!("{}", start));
-        } else {
-            parts.push(format!("{}-{}", start, prev));
+        if let (Some(s), Some(p)) = (start, prev) {
+            if s == p {
+                parts.push(format!("{}", s));
+            } else {
+                parts.push(format!("{}-{}", s, p));
+            }
         }
 
         format!("CPU {}", parts.join(","))

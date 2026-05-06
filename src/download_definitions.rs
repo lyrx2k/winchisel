@@ -1,5 +1,4 @@
 /// External software definitions for Downloads tab.
-/// Source of truth: memstechtips/Winhance ExternalAppDefinitions.* (plus local extras).
 
 #[derive(Clone, Debug)]
 pub struct DownloadApp {
