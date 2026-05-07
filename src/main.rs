@@ -59,6 +59,17 @@ impl Default for AppSettings {
 pub enum Language {
     English,
     German,
+    French,
+    Spanish,
+    Turkish,
+    Greek,
+    Dutch,
+    Portuguese,
+    Italian,
+    Polish,
+    Russian,
+    Japanese,
+    ChineseSimplified,
 }
 
 pub fn save_app_settings(settings: &AppSettings) {

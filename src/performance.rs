@@ -2685,6 +2685,17 @@ fn catalog(lang: Language) -> &'static [CatalogItem] {
     let cache = match lang {
         Language::English => &CATALOG_EN,
         Language::German => &CATALOG_DE,
+        Language::French => &CATALOG_EN,
+        Language::Spanish => &CATALOG_EN,
+        Language::Turkish => &CATALOG_EN,
+        Language::Greek => &CATALOG_EN,
+        Language::Dutch => &CATALOG_EN,
+        Language::Portuguese => &CATALOG_EN,
+        Language::Italian => &CATALOG_EN,
+        Language::Polish => &CATALOG_EN,
+        Language::Russian => &CATALOG_EN,
+        Language::Japanese => &CATALOG_EN,
+        Language::ChineseSimplified => &CATALOG_EN,
     };
     cache.get_or_init(|| {
         PERFORMANCE_CATALOG
@@ -2720,6 +2731,17 @@ fn catalog_by_id(lang: Language) -> &'static HashMap<i32, &'static CatalogItem> 
     let cache = match lang {
         Language::English => &CATALOG_BY_ID_EN,
         Language::German => &CATALOG_BY_ID_DE,
+        Language::French => &CATALOG_BY_ID_EN,
+        Language::Spanish => &CATALOG_BY_ID_EN,
+        Language::Turkish => &CATALOG_BY_ID_EN,
+        Language::Greek => &CATALOG_BY_ID_EN,
+        Language::Dutch => &CATALOG_BY_ID_EN,
+        Language::Portuguese => &CATALOG_BY_ID_EN,
+        Language::Italian => &CATALOG_BY_ID_EN,
+        Language::Polish => &CATALOG_BY_ID_EN,
+        Language::Russian => &CATALOG_BY_ID_EN,
+        Language::Japanese => &CATALOG_BY_ID_EN,
+        Language::ChineseSimplified => &CATALOG_BY_ID_EN,
     };
     cache.get_or_init(|| {
         let items = catalog(lang);
