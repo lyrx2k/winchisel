@@ -1,4 +1,4 @@
-use super::{DownloadInstallResult, DownloadInstallWorker, WinchiselApp};
+use super::{DownloadInstallResult, DownloadInstallWorker, WinchiselApp, DOWNLOAD_SCAN_CACHE};
 use crate::download_definitions::{DownloadApp, DownloadCategory, get_all_downloads};
 use eframe::egui;
 use std::collections::HashSet;
@@ -252,6 +252,9 @@ impl WinchiselApp {
                     .replacen("{}", &result.fail.to_string(), 1);
                 self.downloads_cache_ready = false;
                 self.downloads_install_worker = None;
+                if let Ok(mut cache) = DOWNLOAD_SCAN_CACHE.lock() {
+                    *cache = None;
+                }
                 self.start_downloads_load();
             }
             Err(mpsc::TryRecvError::Empty) => {}

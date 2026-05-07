@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 
 static CPU_SORT_STATE: LazyLock<Mutex<(CpuSortColumn, bool)>> =
     LazyLock::new(|| Mutex::new((CpuSortColumn::Name, true)));
+static CPU_LABEL_CACHE: LazyLock<Mutex<HashMap<i32, (String, String, Instant)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Clone)]
 pub(crate) struct CpuState {
@@ -43,6 +45,7 @@ pub(crate) struct CpuProcessRow {
     pub(crate) expanded: bool,
     pub(crate) name: String,
     pub(crate) name_lc: String,
+    pub(crate) cpu_value: f32,
     pub(crate) cpu: String,
     pub(crate) priority: String,
     pub(crate) affinity: String,
@@ -495,21 +498,25 @@ impl WinchiselApp {
         std::thread::sleep(std::time::Duration::from_millis(220));
         let _ = system.refresh_processes(ProcessesToUpdate::All, true);
         let total_cpu = system.global_cpu_usage();
+        let processes = system.processes();
+        let mut rows: Vec<CpuProcessRow> = Vec::with_capacity(processes.len());
 
-        let rows: Vec<CpuProcessRow> = system
-            .processes()
-            .iter()
-            .map(|(pid, p)| CpuProcessRow {
+        for (pid, p) in processes.iter() {
+            let (priority, affinity) = cpu_get_process_labels(pid.as_u32() as i32, lang);
+            let cpu_value = p.cpu_usage();
+            let name = p.name().to_string_lossy();
+            rows.push(CpuProcessRow {
                 pid: pid.as_u32() as i32,
                 ppid: p.parent().map(|x| x.as_u32() as i32).unwrap_or(0),
                 depth: 0,
                 has_children: false,
                 expanded: false,
-                name: p.name().to_string_lossy().into_owned(),
-                name_lc: p.name().to_string_lossy().to_lowercase(),
-                cpu: format!("{:.1}%", p.cpu_usage()),
-                priority: cpu_get_process_priority_label(pid.as_u32() as i32, lang),
-                affinity: cpu_get_process_affinity_label(pid.as_u32() as i32, lang),
+                name: name.to_string(),
+                name_lc: name.to_lowercase(),
+                cpu_value,
+                cpu: format!("{:.1}%", cpu_value),
+                priority,
+                affinity,
                 status: match format!("{:?}", p.status()).as_str() {
                     "Run" => crate::i18n::t(lang, "processes_status_running").to_string(),
                     "Sleep" => crate::i18n::t(lang, "processes_status_sleeping").to_string(),
@@ -527,8 +534,8 @@ impl WinchiselApp {
                     "Unknown" => crate::i18n::t(lang, "processes_status_unknown").to_string(),
                     other => other.to_string(),
                 },
-            })
-            .collect();
+            });
+        }
         let rows_tree = Self::build_cpu_tree_rows(&rows, active_only);
         CpuLoadResult {
             all_rows: rows,
@@ -540,11 +547,11 @@ impl WinchiselApp {
     fn build_cpu_tree_rows(rows: &[CpuProcessRow], active_only: bool) -> Vec<CpuProcessRow> {
         let mut by_pid: HashMap<i32, CpuProcessRow> = HashMap::new();
         let mut children: HashMap<i32, Vec<i32>> = HashMap::new();
-        for row in rows.iter().cloned() {
+        for row in rows.iter() {
             if row.ppid != row.pid {
                 children.entry(row.ppid).or_default().push(row.pid);
             }
-            by_pid.insert(row.pid, row);
+            by_pid.insert(row.pid, row.clone());
         }
         let (sort_column, ascending) = Self::cpu_sort_state();
         Self::sort_cpu_children(&mut children, &by_pid, sort_column, ascending);
@@ -560,9 +567,8 @@ impl WinchiselApp {
         };
 
         let mut roots: Vec<i32> = by_pid
-            .values()
-            .filter(|r| r.ppid <= 0 || !by_pid.contains_key(&r.ppid))
-            .map(|r| r.pid)
+            .iter()
+            .filter_map(|(&pid, row)| (row.ppid <= 0 || !by_pid.contains_key(&row.ppid)).then_some(pid))
             .collect();
         Self::sort_cpu_pids(&mut roots, &by_pid, sort_column, ascending);
 
@@ -688,8 +694,7 @@ impl WinchiselApp {
     ) -> HashSet<i32> {
         let mut active = HashSet::new();
         for row in by_pid.values() {
-            let cpu = row.cpu.trim_end_matches('%').parse::<f32>().unwrap_or(0.0);
-            if cpu > 0.0 {
+            if row.cpu_value > 0.0 {
                 let mut p = row.pid;
                 loop {
                     if !active.insert(p) {
@@ -717,7 +722,7 @@ impl WinchiselApp {
     }
 
     fn cpu_value(row: Option<&CpuProcessRow>) -> f32 {
-        row.and_then(|r| r.cpu.trim_end_matches('%').parse::<f32>().ok())
+        row.map(|r| r.cpu_value)
             .unwrap_or(0.0)
     }
 
@@ -881,7 +886,7 @@ impl WinchiselApp {
             .body(|body| {
                 body.rows(26.0, self.state.cpu.cpu_processes.len(), |mut row| {
                     let idx = row.index();
-                    let proc_row = self.state.cpu.cpu_processes[idx].clone();
+                    let proc_row = &self.state.cpu.cpu_processes[idx];
                     let selected = self.state.cpu.cpu_selected_pid == proc_row.pid;
                     let pending_action: std::cell::RefCell<Option<CpuAction>> =
                         std::cell::RefCell::new(None);
@@ -1018,7 +1023,7 @@ impl WinchiselApp {
                     row.col(|ui| {
                         ui.add_sized(
                             [ui.available_width(), 24.0],
-                            egui::Label::new(proc_row.cpu.clone())
+                            egui::Label::new(proc_row.cpu.as_str())
                                 .truncate()
                                 .halign(egui::Align::Center),
                         );
@@ -1026,7 +1031,7 @@ impl WinchiselApp {
                     row.col(|ui| {
                         ui.add_sized(
                             [ui.available_width(), 24.0],
-                            egui::Label::new(proc_row.priority.clone())
+                            egui::Label::new(proc_row.priority.as_str())
                                 .truncate()
                                 .halign(egui::Align::Center),
                         );
@@ -1034,7 +1039,7 @@ impl WinchiselApp {
                     row.col(|ui| {
                         ui.add_sized(
                             [ui.available_width(), 24.0],
-                            egui::Label::new(proc_row.affinity.clone())
+                            egui::Label::new(proc_row.affinity.as_str())
                                 .truncate()
                                 .halign(egui::Align::Center),
                         );
@@ -1042,7 +1047,7 @@ impl WinchiselApp {
                     row.col(|ui| {
                         ui.add_sized(
                             [ui.available_width(), 24.0],
-                            egui::Label::new(proc_row.status.clone())
+                            egui::Label::new(proc_row.status.as_str())
                                 .truncate()
                                 .halign(egui::Align::Center),
                         );
@@ -1175,20 +1180,40 @@ impl WinchiselApp {
     }
 }
 
-fn cpu_get_process_priority_label(pid: i32, lang: crate::Language) -> String {
+fn cpu_get_process_labels(pid: i32, lang: crate::Language) -> (String, String) {
+    const CACHE_TTL: Duration = Duration::from_secs(30);
+    if let Ok(mut cache) = CPU_LABEL_CACHE.lock() {
+        cache.retain(|_, (_, _, cached_at)| cached_at.elapsed() < CACHE_TTL);
+        if let Some((priority, affinity, cached_at)) = cache.get(&pid)
+            && cached_at.elapsed() < CACHE_TTL
+        {
+            return (priority.clone(), affinity.clone());
+        }
+    }
+
     use windows::Win32::System::Threading::{
         ABOVE_NORMAL_PRIORITY_CLASS, BELOW_NORMAL_PRIORITY_CLASS, GetPriorityClass,
-        HIGH_PRIORITY_CLASS, IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, OpenProcess,
-        PROCESS_QUERY_INFORMATION, REALTIME_PRIORITY_CLASS,
+        GetProcessAffinityMask, HIGH_PRIORITY_CLASS, IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS,
+        OpenProcess, PROCESS_QUERY_INFORMATION, REALTIME_PRIORITY_CLASS,
     };
     unsafe {
         let handle = match OpenProcess(PROCESS_QUERY_INFORMATION, false, pid as u32) {
             Ok(h) => h,
-            Err(_) => return crate::i18n::t(lang, "processes_priority_unknown").to_string(),
+            Err(_) => {
+                return (
+                    crate::i18n::t(lang, "processes_priority_unknown").to_string(),
+                    "-".to_string(),
+                );
+            }
         };
         let cls = GetPriorityClass(handle);
+        let mut process_mask: usize = 0;
+        let mut system_mask: usize = 0;
+        let affinity_ok =
+            GetProcessAffinityMask(handle, &mut process_mask, &mut system_mask).is_ok();
         let _ = windows::Win32::Foundation::CloseHandle(handle);
-        match cls {
+
+        let priority = match cls {
             c if c == IDLE_PRIORITY_CLASS.0 => {
                 crate::i18n::t(lang, "processes_priority_idle").to_string()
             }
@@ -1208,31 +1233,22 @@ fn cpu_get_process_priority_label(pid: i32, lang: crate::Language) -> String {
                 crate::i18n::t(lang, "processes_priority_realtime").to_string()
             }
             _ => crate::i18n::t(lang, "processes_priority_unknown").to_string(),
-        }
-    }
-}
-
-fn cpu_get_process_affinity_label(pid: i32, lang: crate::Language) -> String {
-    use windows::Win32::System::Threading::{
-        GetProcessAffinityMask, OpenProcess, PROCESS_QUERY_INFORMATION,
-    };
-    unsafe {
-        let handle = match OpenProcess(PROCESS_QUERY_INFORMATION, false, pid as u32) {
-            Ok(h) => h,
-            Err(_) => return "-".to_string(),
         };
-        let mut process_mask: usize = 0;
-        let mut system_mask: usize = 0;
-        let ok = GetProcessAffinityMask(handle, &mut process_mask, &mut system_mask).is_ok();
-        let _ = windows::Win32::Foundation::CloseHandle(handle);
-        if !ok || system_mask == 0 {
-            return "-".to_string();
+
+        if !affinity_ok || system_mask == 0 {
+            return (priority, "-".to_string());
         }
         if process_mask == system_mask {
-            return crate::i18n::t(lang, "processes_all_cores").to_string();
+            return (
+                priority,
+                crate::i18n::t(lang, "processes_all_cores").to_string(),
+            );
         }
         if process_mask == 0 {
-            return crate::i18n::t(lang, "processes_priority_unknown").to_string();
+            return (
+                priority,
+                crate::i18n::t(lang, "processes_priority_unknown").to_string(),
+            );
         }
 
         let mut parts: Vec<String> = Vec::new();
@@ -1268,11 +1284,15 @@ fn cpu_get_process_affinity_label(pid: i32, lang: crate::Language) -> String {
             }
         }
 
-        format!(
+        let affinity = format!(
             "{} {}",
             crate::i18n::t(lang, "processes_affinity_prefix"),
             parts.join(",")
-        )
+        );
+        if let Ok(mut cache) = CPU_LABEL_CACHE.lock() {
+            cache.insert(pid, (priority.clone(), affinity.clone(), Instant::now()));
+        }
+        (priority, affinity)
     }
 }
 

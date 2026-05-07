@@ -33,13 +33,10 @@ impl WinchiselApp {
                 self.update_check_rx = None;
                 match result {
                     UpdateCheckResult::UpToDate => {
-                        self.state.update_status = self.tr("update_up_to_date").to_string();
+                        self.state.update_status = self.tr("update_checked").to_string();
                         self.toasts
-                            .info(self.tr("update_up_to_date"))
+                            .info(self.tr("update_checked"))
                             .duration(Duration::from_secs_f64(2.5));
-                        if self.update_dialog_on_complete {
-                            self.pending_update_dialog = Some(UpdateDialog::UpToDate);
-                        }
                     }
                     UpdateCheckResult::UpdateAvailable(version) => {
                         self.state.update_status =
@@ -89,7 +86,6 @@ impl WinchiselApp {
             return;
         };
         let title = match &dialog {
-            UpdateDialog::UpToDate => self.tr("update_no_found_title"),
             UpdateDialog::UpdateAvailable { .. } => self.tr("update_available_title"),
             UpdateDialog::Error { .. } => self.tr("update_failed_title"),
         };
@@ -101,9 +97,6 @@ impl WinchiselApp {
             .show(ctx, |ui| {
                 ui.vertical(|ui| {
                     match &dialog {
-                        UpdateDialog::UpToDate => {
-                            ui.label(self.tr("update_up_to_date"));
-                        }
                         UpdateDialog::UpdateAvailable { latest_version } => {
                             ui.label(format!(
                                 "{} {}",

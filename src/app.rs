@@ -12,7 +12,7 @@ use std::collections::HashSet;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
@@ -103,6 +103,16 @@ struct DownloadsLoadWorker {
     rx: Receiver<DownloadsLoadResult>,
 }
 
+struct DownloadScanCache {
+    winget_ids: HashSet<String>,
+    winget_names: HashSet<String>,
+    registry_names: Vec<String>,
+    cached_at: Instant,
+}
+
+static DOWNLOAD_SCAN_CACHE: LazyLock<Mutex<Option<DownloadScanCache>>> =
+    LazyLock::new(|| Mutex::new(None));
+
 struct DownloadInstallResult {
     ok: usize,
     fail: usize,
@@ -144,7 +154,6 @@ enum UpdateCheckResult {
 
 #[derive(Clone)]
 enum UpdateDialog {
-    UpToDate,
     UpdateAvailable { latest_version: String },
     Error { message: String },
 }
@@ -424,9 +433,45 @@ impl WinchiselApp {
     fn spawn_downloads_worker(items: Vec<DownloadApp>) -> (Option<DownloadsLoadWorker>, bool) {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let winget_ids = Self::get_winget_installed_ids();
-            let winget_names = Self::get_winget_installed_names();
-            let registry_names = Self::get_registry_installed_names();
+            let cache_ttl = Duration::from_secs(600);
+            let cached = DOWNLOAD_SCAN_CACHE
+                .lock()
+                .ok()
+                .and_then(|guard| {
+                    guard.as_ref().and_then(|entry| {
+                        (entry.cached_at.elapsed() < cache_ttl).then(|| {
+                            (
+                                entry.winget_ids.clone(),
+                                entry.winget_names.clone(),
+                                entry.registry_names.clone(),
+                            )
+                        })
+                    })
+                });
+
+            let (winget_ids, winget_names, registry_names) = if let Some(cache) = cached {
+                cache
+            } else {
+                let winget_ids_handle = std::thread::spawn(Self::get_winget_installed_ids);
+                let winget_names_handle = std::thread::spawn(Self::get_winget_installed_names);
+                let registry_names_handle = std::thread::spawn(Self::get_registry_installed_names);
+
+                let winget_ids = winget_ids_handle.join().unwrap_or_default();
+                let winget_names = winget_names_handle.join().unwrap_or_default();
+                let registry_names = registry_names_handle.join().unwrap_or_default();
+
+                if let Ok(mut guard) = DOWNLOAD_SCAN_CACHE.lock() {
+                    *guard = Some(DownloadScanCache {
+                        winget_ids: winget_ids.clone(),
+                        winget_names: winget_names.clone(),
+                        registry_names: registry_names.clone(),
+                        cached_at: Instant::now(),
+                    });
+                }
+
+                (winget_ids, winget_names, registry_names)
+            };
+
             let installed = items
                 .iter()
                 .map(|item| {
@@ -642,9 +687,7 @@ impl eframe::App for WinchiselApp {
             self.start_update_check(true);
         }
         if self.settings_save_due_at.is_some() {
-            repaint_after = Some(repaint_after.map_or(Duration::from_millis(50), |cur| {
-                cur.min(Duration::from_millis(50))
-            }));
+            Self::bump_repaint_after(&mut repaint_after, Duration::from_millis(50));
         }
         WinchiselApp::performance_tick(self, ui);
         if self.state.active_tab == Tab::Processes
@@ -675,40 +718,28 @@ impl eframe::App for WinchiselApp {
             if refresh_due {
                 self.state.home = Self::build_home_state(self.state.settings.language);
                 self.state.home_last_refresh = Some(Instant::now());
-                repaint_after = Some(repaint_after.map_or(Duration::from_millis(100), |cur| {
-                    cur.min(Duration::from_millis(100))
-                }));
+                Self::bump_repaint_after(&mut repaint_after, Duration::from_millis(100));
             } else if let Some(last) = self.state.home_last_refresh {
                 let elapsed = last.elapsed();
                 let until_refresh = Duration::from_secs(5).saturating_sub(elapsed);
                 let next = until_refresh.min(Duration::from_millis(250));
-                repaint_after = Some(repaint_after.map_or(next, |cur| cur.min(next)));
+                Self::bump_repaint_after(&mut repaint_after, next);
             }
         }
         if self.state.debloater.debloater_loading || self.debloater_load_worker.is_some() {
-            repaint_after = Some(repaint_after.map_or(Duration::from_millis(50), |cur| {
-                cur.min(Duration::from_millis(50))
-            }));
+            Self::bump_repaint_after(&mut repaint_after, Duration::from_millis(50));
         }
         if self.state.downloads.downloads_loading || self.downloads_load_worker.is_some() {
-            repaint_after = Some(repaint_after.map_or(Duration::from_millis(50), |cur| {
-                cur.min(Duration::from_millis(50))
-            }));
+            Self::bump_repaint_after(&mut repaint_after, Duration::from_millis(50));
         }
         if WinchiselApp::performance_sidebar_loading(self) {
-            repaint_after = Some(repaint_after.map_or(Duration::from_millis(50), |cur| {
-                cur.min(Duration::from_millis(50))
-            }));
+            Self::bump_repaint_after(&mut repaint_after, Duration::from_millis(50));
         }
         if self.cpu_load_worker.is_some() {
-            repaint_after = Some(repaint_after.map_or(Duration::from_millis(50), |cur| {
-                cur.min(Duration::from_millis(50))
-            }));
+            Self::bump_repaint_after(&mut repaint_after, Duration::from_millis(50));
         }
         if self.state.update_check_loading || self.update_check_rx.is_some() {
-            repaint_after = Some(repaint_after.map_or(Duration::from_millis(50), |cur| {
-                cur.min(Duration::from_millis(50))
-            }));
+            Self::bump_repaint_after(&mut repaint_after, Duration::from_millis(50));
         }
 
         if let Some(delay) = repaint_after {
@@ -957,4 +988,10 @@ impl eframe::App for WinchiselApp {
     }
 
     fn update(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {}
+}
+
+impl WinchiselApp {
+    fn bump_repaint_after(slot: &mut Option<Duration>, next: Duration) {
+        *slot = Some(slot.map_or(next, |cur| cur.min(next)));
+    }
 }
