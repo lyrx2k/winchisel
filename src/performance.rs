@@ -2510,7 +2510,7 @@ pub const PERFORMANCE_CATALOG: &[RawCatalogItemNative] = &[
     },
     RawCatalogItemNative {
         id: "accessibility-stickykeys-hotkey",
-        name: "StickyKeys Hotkey (ShiftÃ—5)",
+        name: "StickyKeys Hotkey (Shift+5)",
         group: 9,
         input: 0,
         options: &[],

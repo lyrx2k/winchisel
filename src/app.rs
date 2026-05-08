@@ -351,7 +351,6 @@ impl WinchiselApp {
             save_app_settings(&self.state.settings);
             crate::set_console_visibility(self.state.settings.show_console);
             self.state.last_saved_settings = self.state.settings.clone();
-            self.state.update_status = self.tr("settings_saved").to_string();
             self.settings_save_due_at = None;
             self.toasts
                 .info(self.tr("settings_saved"))
