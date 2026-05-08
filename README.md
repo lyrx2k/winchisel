@@ -15,6 +15,8 @@ changing Windows settings without digging through multiple control panels.
 
 - Home dashboard with system information
 - Debloater tools for removing Windows components and apps
+- Privacy settings for disabling telemetry and tracking
+- Security options for system hardening
 - Downloads tab for installing useful apps and tools (via winget or vendor sites)
 - Performance tab with gaming and system tweaks
 - Processes tab for process management, priorities, affinity, and related actions
@@ -33,6 +35,8 @@ changing Windows settings without digging through multiple control panels.
 |-----|---------|
 | **Home** | System overview |
 | **Debloater** | Remove bloatware — use 🛡️ *Recommended* for safe defaults |
+| **Privacy** | Disable telemetry and tracking |
+| **Security** | System hardening and security tweaks |
 | **Downloads** | Install tools (fetches from winget or vendor sites) |
 | **Performance** | Gaming/system tweaks |
 | **Processes** | Manage priorities and affinity |
