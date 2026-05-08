@@ -5,6 +5,23 @@ use iconflow::{Pack, Size, Style, fonts, try_icon};
 use std::sync::Arc;
 
 impl WinchiselApp {
+    pub(crate) fn tree_header_hover(
+        ui: &mut egui::Ui,
+        response: &egui::Response,
+    ) {
+        let response = response.clone();
+        let hovered = response.hovered();
+        let rect = response.rect;
+        let _ = response.clone().on_hover_cursor(egui::CursorIcon::PointingHand);
+        if hovered {
+            let rect = rect.expand(2.0);
+            let fill = egui::Color32::from_rgba_unmultiplied(20, 54, 66, 96);
+            let stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(10, 210, 254));
+            ui.painter()
+                .rect(rect, 6.0, fill, stroke, egui::StrokeKind::Inside);
+        }
+    }
+
     pub(crate) fn native_toggle_switch(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
         let desired_size = ui.spacing().interact_size.y * egui::vec2(2.0, 1.0);
         let (rect, mut response) = ui.allocate_exact_size(desired_size, egui::Sense::click());

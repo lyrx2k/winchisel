@@ -46,13 +46,22 @@ impl WinchiselApp {
                             egui::Color32::from_rgb(226, 226, 226),
                         ));
                         ui.label(self.tr("language"));
+                        let current_language = self.state.settings.language;
                         egui::ComboBox::from_id_salt("language_combo")
-                            .selected_text("English")
+                            .selected_text(match current_language {
+                                crate::Language::English => "English",
+                                crate::Language::German => "Deutsch",
+                            })
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(
                                     &mut self.state.settings.language,
                                     crate::Language::English,
                                     "English",
+                                );
+                                ui.selectable_value(
+                                    &mut self.state.settings.language,
+                                    crate::Language::German,
+                                    "Deutsch",
                                 );
                             });
                     });

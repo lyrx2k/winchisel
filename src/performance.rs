@@ -2680,9 +2680,7 @@ const DEPENDENCY_RULES: &[DependencyRule] = &[
 ];
 
 fn catalog(lang: Language) -> &'static [CatalogItem] {
-    let cache = match lang {
-        Language::English => &CATALOG_EN,
-    };
+    let cache = &CATALOG_EN;
     cache.get_or_init(|| {
         PERFORMANCE_CATALOG
             .iter()
@@ -2696,7 +2694,7 @@ fn catalog(lang: Language) -> &'static [CatalogItem] {
                 desc_lc: format!(
                     "{} {}",
                     t(lang, r.id).to_ascii_lowercase(),
-                    t(Language::English, r.id).to_ascii_lowercase()
+                    t(lang, r.id).to_ascii_lowercase()
                 ),
                 input_type: if r.input == 1 { 1 } else { 0 },
                 options: if r.options.is_empty() {
@@ -2714,9 +2712,7 @@ fn catalog(lang: Language) -> &'static [CatalogItem] {
 }
 
 fn catalog_by_id(lang: Language) -> &'static HashMap<i32, &'static CatalogItem> {
-    let cache = match lang {
-        Language::English => &CATALOG_BY_ID_EN,
-    };
+    let cache = &CATALOG_BY_ID_EN;
     cache.get_or_init(|| {
         let items = catalog(lang);
         items.iter().map(|item| (item.num_id, item)).collect()
@@ -2761,7 +2757,7 @@ fn normalize_option_label(raw: &str) -> String {
 }
 
 fn apply_bulk_profile(recommended: bool) {
-    for item in catalog(Language::English) {
+    for item in catalog(crate::app_definitions::current_language()) {
         apply_single_profile(item.num_id, recommended);
     }
 }
@@ -2821,7 +2817,9 @@ fn profile_rule(id: &str) -> Option<&'static ProfileRule> {
 }
 
 fn item_by_num_id(id: i32) -> Option<&'static CatalogItem> {
-    catalog_by_id(Language::English).get(&id).copied()
+    catalog_by_id(crate::app_definitions::current_language())
+        .get(&id)
+        .copied()
 }
 
 fn build_grouped_rows_filtered(query: &str, lang: Language) -> [Vec<GamingTweakRow>; 10] {
@@ -2875,11 +2873,7 @@ fn build_grouped_rows_from(
             category: item.category,
             key: item.key,
             name: item.name.clone(),
-            description: if lang == Language::English {
-                t(Language::English, item.key).to_string()
-            } else {
-                t(lang, item.key).to_string()
-            },
+            description: t(lang, item.key).to_string(),
             enabled,
             is_editable: true,
             is_child,
@@ -2944,7 +2938,7 @@ fn has_children(key: &str) -> bool {
 fn apply_parent_visibility(groups: &mut [Vec<GamingTweakRow>; 10]) {
     let mut parent_state: HashMap<i32, bool> = HashMap::new();
     let mut parent_lookup: HashMap<&'static str, i32> = HashMap::new();
-    for item in catalog(Language::English) {
+    for item in catalog(crate::app_definitions::current_language()) {
         parent_lookup.insert(item.key, item.num_id);
     }
     for group in groups.iter() {
@@ -3133,7 +3127,9 @@ fn detect_all_states_parallel() -> HashMap<i32, (bool, i32)> {
     let scheduled_task_cache = SCHEDULED_TASK_CACHE
         .get_or_init(|| Arc::new(load_scheduled_task_states()))
         .clone();
-    let items: Vec<&'static CatalogItem> = catalog(Language::English).iter().collect();
+    let items: Vec<&'static CatalogItem> = catalog(crate::app_definitions::current_language())
+        .iter()
+        .collect();
     let worker_count = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4)
@@ -3282,7 +3278,7 @@ fn detect_gaming_tweak_with_task_cache_item(
 
 fn load_scheduled_task_states() -> HashMap<String, bool> {
     const CREATE_NO_WINDOW: u32 = 0x08000000;
-    let paths: Vec<&str> = catalog(Language::English)
+    let paths: Vec<&str> = catalog(crate::app_definitions::current_language())
         .iter()
         .filter_map(|item| scheduled_task_for_key(canonical_key(item.key)))
         .collect();

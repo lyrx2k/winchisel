@@ -693,7 +693,6 @@ impl eframe::App for WinchiselApp {
         if let Some(delay) = repaint_after {
             ui.ctx().request_repaint_after(delay);
         }
-
         egui::Panel::top("top_bar").show_inside(ui, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {

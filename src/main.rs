@@ -58,6 +58,7 @@ impl Default for AppSettings {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Language {
     English,
+    German,
 }
 
 pub fn save_app_settings(settings: &AppSettings) {

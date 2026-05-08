@@ -412,7 +412,7 @@ impl WinchiselApp {
                                 if rules.is_empty() {
                                     continue;
                                 }
-                                egui::CollapsingHeader::new(
+                                let header = egui::CollapsingHeader::new(
                                     egui::RichText::new(self.performance_group_label(
                                         group_idx,
                                         self.state.settings.language,
@@ -453,6 +453,10 @@ impl WinchiselApp {
                                     }
                                     ui.add_space(8.0);
                                 });
+                                Self::tree_header_hover(
+                                    ui,
+                                    &header.header_response,
+                                );
                             }
                         });
                 }

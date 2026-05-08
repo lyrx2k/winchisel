@@ -421,7 +421,7 @@ impl WinchiselApp {
                             if category_items.is_empty() {
                                 continue;
                             }
-                            egui::CollapsingHeader::new(
+                            let header = egui::CollapsingHeader::new(
                                 egui::RichText::new(label)
                                     .strong()
                                     .size(15.0)
@@ -439,6 +439,10 @@ impl WinchiselApp {
                                 }
                                 ui.add_space(8.0);
                             });
+                            Self::tree_header_hover(
+                                ui,
+                                &header.header_response,
+                            );
                         }
                     });
             }

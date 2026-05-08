@@ -1,5 +1,5 @@
 use super::WinchiselApp;
-use crate::{GamingTweakRow, i18n::t};
+use crate::{GamingTweakRow, app_definitions::current_language, i18n::t};
 use eframe::egui;
 use iconflow::{Pack, Size, Style, try_icon};
 use std::collections::HashMap;
@@ -1634,18 +1634,19 @@ impl WinchiselApp {
     }
 
     fn privacy_state_label(values: &[ValueState]) -> String {
+        let lang = current_language();
         let Some(value) = values
             .iter()
             .find(|value| !matches!(value, ValueState::Missing))
         else {
-            return t(crate::Language::English, "privacy_option_off").to_string();
+            return t(lang, "privacy_option_off").to_string();
         };
         match value {
-            ValueState::Dword(0) => t(crate::Language::English, "privacy_option_off").to_string(),
-            ValueState::Dword(1) => t(crate::Language::English, "privacy_option_on").to_string(),
+            ValueState::Dword(0) => t(lang, "privacy_option_off").to_string(),
+            ValueState::Dword(1) => t(lang, "privacy_option_on").to_string(),
             ValueState::Dword(other) => other.to_string(),
             ValueState::String(s) => s.to_string(),
-            ValueState::Missing => t(crate::Language::English, "privacy_option_off").to_string(),
+            ValueState::Missing => t(lang, "privacy_option_off").to_string(),
         }
     }
 
@@ -1697,8 +1698,8 @@ impl WinchiselApp {
             warning_text: String::new(),
             input_type: 0,
             options: vec![
-                t(crate::Language::English, "privacy_option_on").to_string(),
-                t(crate::Language::English, "privacy_option_off").to_string(),
+                t(current_language(), "privacy_option_on").to_string(),
+                t(current_language(), "privacy_option_off").to_string(),
             ],
             selected_index: if row_enabled { 1 } else { 0 },
             recommended_label: meta.recommended,
@@ -1927,6 +1928,7 @@ impl WinchiselApp {
                 return;
             }
 
+            let lang = self.state.settings.language;
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
@@ -1949,11 +1951,14 @@ impl WinchiselApp {
                         {
                             continue;
                         }
-                        egui::CollapsingHeader::new(
-                            egui::RichText::new(Self::privacy_group_label(group_idx))
-                                .strong()
-                                .size(15.0)
-                                .color(egui::Color32::from_rgb(149, 194, 255)),
+                        let header = egui::CollapsingHeader::new(
+                            egui::RichText::new(crate::i18n::t(
+                                lang,
+                                Self::privacy_group_label(group_idx),
+                            ))
+                            .strong()
+                            .size(15.0)
+                            .color(egui::Color32::from_rgb(149, 194, 255)),
                         )
                         .id_salt(("privacy_security_group", group_idx))
                         .default_open(true)
@@ -2002,6 +2007,7 @@ impl WinchiselApp {
                             }
                             ui.add_space(8.0);
                         });
+                        Self::tree_header_hover(ui, &header.header_response);
                     }
                 });
         });
