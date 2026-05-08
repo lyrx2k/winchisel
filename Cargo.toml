@@ -1,14 +1,14 @@
 [package]
 authors = ["lyrx2k"]
 name = "Winchisel"
-description = "Fast and native windows tweaker"
+description = "Winchisel is a native Windows tweaking utility written in Rust. It combines debloating, performance tweaks, process tools, latency analysis, downloads, and system information in one compact interface."
 repository = "https://github.com/lyrx2k/winchisel"
 version = "0.1.5"
 edition = "2024"
 build = "src/build.rs"
 
 [profile.release]
-opt-level = "z"   # "z" optimiert aggressiv auf eine kleine Dateigröße. Alternativ "s" (Standard-Größenoptimierung). #opt-level = 3
+opt-level = "z" # "z" optimiert aggressiv auf eine kleine Dateigröße. Alternativ "s" (Standard-Größenoptimierung). #opt-level = 3
 lto = true
 codegen-units = 1
 strip = true

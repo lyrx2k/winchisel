@@ -46,97 +46,15 @@ impl WinchiselApp {
                             egui::Color32::from_rgb(226, 226, 226),
                         ));
                         ui.label(self.tr("language"));
-                        let previous_language = self.state.settings.language;
                         egui::ComboBox::from_id_salt("language_combo")
-                            .selected_text(match self.state.settings.language {
-                                crate::Language::German => "Deutsch",
-                                crate::Language::English => "English",
-                                crate::Language::French => "Français",
-                                crate::Language::Spanish => "Español",
-                                crate::Language::Turkish => "Türkçe",
-                                crate::Language::Greek => "Ελληνικά",
-                                crate::Language::Dutch => "Nederlands",
-                                crate::Language::Portuguese => "Português",
-                                crate::Language::Italian => "Italiano",
-                                crate::Language::Polish => "Polski",
-                                crate::Language::Russian => "Русский",
-                                crate::Language::Japanese => "日本語",
-                                crate::Language::ChineseSimplified => "简体中文",
-                            })
+                            .selected_text("English")
                             .show_ui(ui, |ui| {
-                                ui.selectable_value(
-                                    &mut self.state.settings.language,
-                                    crate::Language::German,
-                                    "Deutsch",
-                                );
                                 ui.selectable_value(
                                     &mut self.state.settings.language,
                                     crate::Language::English,
                                     "English",
                                 );
-                                ui.selectable_value(
-                                    &mut self.state.settings.language,
-                                    crate::Language::French,
-                                    "Français",
-                                );
-                                ui.selectable_value(
-                                    &mut self.state.settings.language,
-                                    crate::Language::Spanish,
-                                    "Español",
-                                );
-                                ui.selectable_value(
-                                    &mut self.state.settings.language,
-                                    crate::Language::Turkish,
-                                    "Türkçe",
-                                );
-                                ui.selectable_value(
-                                    &mut self.state.settings.language,
-                                    crate::Language::Greek,
-                                    "Ελληνικά",
-                                );
-                                ui.selectable_value(
-                                    &mut self.state.settings.language,
-                                    crate::Language::Dutch,
-                                    "Nederlands",
-                                );
-                                ui.selectable_value(
-                                    &mut self.state.settings.language,
-                                    crate::Language::Portuguese,
-                                    "Português",
-                                );
-                                ui.selectable_value(
-                                    &mut self.state.settings.language,
-                                    crate::Language::Italian,
-                                    "Italiano",
-                                );
-                                ui.selectable_value(
-                                    &mut self.state.settings.language,
-                                    crate::Language::Polish,
-                                    "Polski",
-                                );
-                                ui.selectable_value(
-                                    &mut self.state.settings.language,
-                                    crate::Language::Russian,
-                                    "Русский",
-                                );
-                                ui.selectable_value(
-                                    &mut self.state.settings.language,
-                                    crate::Language::Japanese,
-                                    "日本語",
-                                );
-                                ui.selectable_value(
-                                    &mut self.state.settings.language,
-                                    crate::Language::ChineseSimplified,
-                                    "简体中文",
-                                );
                             });
-                        if self.state.settings.language != previous_language {
-                            self.settings_save_snapshot = self.state.settings.clone();
-                            self.settings_save_due_at = None;
-                            crate::save_app_settings(&self.state.settings);
-                            self.apply_language_change();
-                            self.state.update_status = self.tr("settings_saved").to_string();
-                        }
                     });
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {

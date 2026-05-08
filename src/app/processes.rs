@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 
 static CPU_SORT_STATE: LazyLock<Mutex<(CpuSortColumn, bool)>> =
     LazyLock::new(|| Mutex::new((CpuSortColumn::Name, true)));
-static CPU_LABEL_CACHE: LazyLock<Mutex<HashMap<i32, (String, String, Instant)>>> =
+type CpuLabelCacheEntry = (String, String, Instant);
+
+static CPU_LABEL_CACHE: LazyLock<Mutex<HashMap<i32, CpuLabelCacheEntry>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Clone)]

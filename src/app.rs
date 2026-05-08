@@ -12,8 +12,8 @@ use std::collections::HashSet;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::process::Command;
-use std::sync::{LazyLock, Mutex};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 mod debloater;
@@ -23,6 +23,8 @@ mod home;
 mod latency_tab;
 #[path = "app/performance.rs"]
 mod performance_tab;
+#[path = "app/privacy_security.rs"]
+mod privacy_security;
 #[path = "app/processes.rs"]
 mod processes_tab;
 #[path = "app/restore_point.rs"]
@@ -43,6 +45,7 @@ pub(crate) enum Tab {
     Performance,
     Processes,
     Latency,
+    SecurityPrivacy,
     Settings,
 }
 
@@ -89,6 +92,7 @@ struct AppState {
     debloater: debloater::DebloaterState,
     downloads: DownloadsState,
     performance: performance_tab::PerformanceState,
+    privacy_security: privacy_security::PrivacySecurityState,
     home: HomeState,
     cpu: processes_tab::CpuState,
     latency: latency_tab::LatencyState,
@@ -169,6 +173,7 @@ pub struct WinchiselApp {
     downloads_install_worker: Option<DownloadInstallWorker>,
     downloads_cache_ready: bool,
     performance_load_worker: Option<performance_tab::PerformanceLoadWorker>,
+    privacy_load_worker: Option<privacy_security::PrivacySecurityLoadWorker>,
     cpu_load_worker: Option<processes_tab::CpuLoadWorker>,
     latency_load_worker: Option<latency_tab::LatencyLoadWorker>,
     restore_point_load_worker: Option<RestorePointLoadWorker>,
@@ -205,6 +210,8 @@ impl WinchiselApp {
             Self::spawn_downloads_worker(download_items.clone());
         let (performance_load_worker, performance_loaded) =
             Self::spawn_performance_worker("", settings.language);
+        let (privacy_load_worker, privacy_loaded) =
+            Self::spawn_privacy_security_worker(settings.language);
         Self {
             state: AppState {
                 last_saved_settings: settings.clone(),
@@ -244,6 +251,12 @@ impl WinchiselApp {
                     performance_loaded,
                     performance_groups: Default::default(),
                     performance_quick_action_index: 0,
+                },
+                privacy_security: privacy_security::PrivacySecurityState {
+                    privacy_query: String::new(),
+                    privacy_quick_action_index: 0,
+                    groups: Default::default(),
+                    loaded: privacy_loaded,
                 },
                 home: Self::build_home_state(settings.language),
                 cpu: processes_tab::CpuState {
@@ -290,6 +303,7 @@ impl WinchiselApp {
             downloads_install_worker: None,
             downloads_cache_ready: false,
             performance_load_worker,
+            privacy_load_worker,
             cpu_load_worker: None,
             latency_load_worker: None,
             restore_point_load_worker: None,
@@ -345,73 +359,6 @@ impl WinchiselApp {
         }
     }
 
-    fn apply_language_change(&mut self) {
-        let lang = self.state.settings.language;
-
-        self.state.home = Self::build_home_state(lang);
-        self.state.update_status = t(lang, "update_ready").to_string();
-
-        self.state.debloater.debloater_items = get_all_apps(lang);
-        self.state.debloater.debloater_selected =
-            vec![false; self.state.debloater.debloater_items.len()];
-        self.state.debloater.debloater_installed =
-            vec![false; self.state.debloater.debloater_items.len()];
-        self.state.debloater.debloater_filter_cache_query.clear();
-        self.state.debloater.debloater_filter_cache_tab = usize::MAX;
-        self.state.debloater.debloater_filter_cache_view_mode = usize::MAX;
-        self.state.debloater.debloater_filter_cache_all.clear();
-        self.debloater_cache_ready = false;
-        self.state.debloater.debloater_loading = false;
-        self.debloater_load_worker = None;
-        self.start_debloater_load();
-
-        self.state.downloads.downloads_items = get_all_downloads(lang);
-        self.state.downloads.downloads_selected =
-            vec![false; self.state.downloads.downloads_items.len()];
-        self.state.downloads.downloads_installed =
-            vec![false; self.state.downloads.downloads_items.len()];
-        self.state.downloads.downloads_filter_cache_query.clear();
-        self.state.downloads.downloads_filter_cache_all.clear();
-        for bucket in &mut self.state.downloads.downloads_filter_cache_categories {
-            bucket.clear();
-        }
-        self.downloads_cache_ready = false;
-        self.state.downloads.downloads_loading = false;
-        self.downloads_load_worker = None;
-        self.start_downloads_load();
-
-        self.state.performance.performance_loaded = false;
-        self.performance_load_worker = None;
-        self.start_performance_load();
-
-        self.cpu_load_worker = None;
-        self.state.cpu.cpu_visible_count = 0;
-        self.state.cpu.cpu_total_usage = "0.0%".to_string();
-        self.state.cpu.cpu_processes_all.clear();
-        self.state.cpu.cpu_processes.clear();
-        self.state.cpu.cpu_selected_pid = -1;
-        self.state.cpu.cpu_selected_name.clear();
-        self.state.cpu.cpu_last_refresh = None;
-        self.state.cpu.cpu_last_error = None;
-        self.state.cpu.cpu_reload_pending = false;
-        self.state.cpu.cpu_reload_ready_at = None;
-        self.start_cpu_load();
-
-        self.latency_load_worker = None;
-        self.state.latency.latency_loading = false;
-        self.state.latency.latency_completion_pending = false;
-        self.state.latency.latency_progress = 0;
-        self.state.latency.latency_progress_display = 0.0;
-        self.state.latency.latency_status.clear();
-        self.state.latency.latency_lines.clear();
-        self.state.latency.latency_pending_lines.clear();
-        self.state.latency.latency_tick_next_at = None;
-        self.state.latency.latency_completion_ready_at = None;
-
-        self.restore_point_load_worker = None;
-        self.restore_point_dialog = None;
-    }
-
     fn ensure_download_selection(&mut self) {
         if self.state.downloads.downloads_selected.len()
             != self.state.downloads.downloads_items.len()
@@ -434,20 +381,17 @@ impl WinchiselApp {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let cache_ttl = Duration::from_secs(600);
-            let cached = DOWNLOAD_SCAN_CACHE
-                .lock()
-                .ok()
-                .and_then(|guard| {
-                    guard.as_ref().and_then(|entry| {
-                        (entry.cached_at.elapsed() < cache_ttl).then(|| {
-                            (
-                                entry.winget_ids.clone(),
-                                entry.winget_names.clone(),
-                                entry.registry_names.clone(),
-                            )
-                        })
+            let cached = DOWNLOAD_SCAN_CACHE.lock().ok().and_then(|guard| {
+                guard.as_ref().and_then(|entry| {
+                    (entry.cached_at.elapsed() < cache_ttl).then(|| {
+                        (
+                            entry.winget_ids.clone(),
+                            entry.winget_names.clone(),
+                            entry.registry_names.clone(),
+                        )
                     })
-                });
+                })
+            });
 
             let (winget_ids, winget_names, registry_names) = if let Some(cache) = cached {
                 cache
@@ -690,6 +634,7 @@ impl eframe::App for WinchiselApp {
             Self::bump_repaint_after(&mut repaint_after, Duration::from_millis(50));
         }
         WinchiselApp::performance_tick(self, ui);
+        WinchiselApp::privacy_tick(self, ui);
         if self.state.active_tab == Tab::Processes
             && self.state.cpu.cpu_last_refresh.is_none()
             && self.cpu_load_worker.is_none()
@@ -733,6 +678,9 @@ impl eframe::App for WinchiselApp {
             Self::bump_repaint_after(&mut repaint_after, Duration::from_millis(50));
         }
         if WinchiselApp::performance_sidebar_loading(self) {
+            Self::bump_repaint_after(&mut repaint_after, Duration::from_millis(50));
+        }
+        if WinchiselApp::privacy_sidebar_loading(self) {
             Self::bump_repaint_after(&mut repaint_after, Duration::from_millis(50));
         }
         if self.cpu_load_worker.is_some() {
@@ -873,7 +821,9 @@ impl eframe::App for WinchiselApp {
                 let tab_performance = self.tr("performance").to_string();
                 let tab_processes = self.tr("processes").to_string();
                 let tab_latency = self.tr("latency").to_string();
+                let tab_privacy_security = self.tr("privacy_security").to_string();
                 let tab_settings = self.tr("settings").to_string();
+                let privacy_loading = WinchiselApp::privacy_sidebar_loading(self);
                 ui.add_space(10.0);
                 ui.vertical_centered(|ui| {
                     ui.heading(self.tr("nav_title"));
@@ -898,16 +848,23 @@ impl eframe::App for WinchiselApp {
                 Self::tab_button(
                     ui,
                     &mut self.state.active_tab,
-                    Tab::Downloads,
-                    &Self::sidebar_tab_label("download", &tab_downloads),
-                    self.state.downloads.downloads_loading || self.downloads_load_worker.is_some(),
+                    Tab::Performance,
+                    &Self::sidebar_tab_label("gauge", &tab_performance),
+                    performance_loading,
                 );
                 Self::tab_button(
                     ui,
                     &mut self.state.active_tab,
-                    Tab::Performance,
-                    &Self::sidebar_tab_label("gauge", &tab_performance),
-                    performance_loading,
+                    Tab::SecurityPrivacy,
+                    &Self::sidebar_tab_label("shield-check", &tab_privacy_security),
+                    privacy_loading,
+                );
+                Self::tab_button(
+                    ui,
+                    &mut self.state.active_tab,
+                    Tab::Downloads,
+                    &Self::sidebar_tab_label("download", &tab_downloads),
+                    self.state.downloads.downloads_loading || self.downloads_load_worker.is_some(),
                 );
                 Self::tab_button(
                     ui,
@@ -943,9 +900,12 @@ impl eframe::App for WinchiselApp {
                     Tab::Performance => self.render_performance_tab(ui),
                     Tab::Processes => self.render_processes_tab(ui),
                     Tab::Latency => self.render_latency_tab(ui),
+                    Tab::SecurityPrivacy => self.render_privacy_security_tab(ui),
                     Tab::Settings => self.render_settings_tab(ui),
                 });
         });
+
+        self.poll_privacy_security_load();
 
         self.show_debloater_dialog(ui.ctx());
 

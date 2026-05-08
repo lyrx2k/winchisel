@@ -1286,7 +1286,7 @@ fn app_ext(
         description_lc: format!(
             "{} {}",
             t(Language::English, name).to_ascii_lowercase(),
-            t(Language::German, name).to_ascii_lowercase()
+            t(Language::English, name).to_ascii_lowercase()
         ),
         category: cat,
         winget_ids,

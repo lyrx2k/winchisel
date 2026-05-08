@@ -58,18 +58,6 @@ impl Default for AppSettings {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Language {
     English,
-    German,
-    French,
-    Spanish,
-    Turkish,
-    Greek,
-    Dutch,
-    Portuguese,
-    Italian,
-    Polish,
-    Russian,
-    Japanese,
-    ChineseSimplified,
 }
 
 pub fn save_app_settings(settings: &AppSettings) {
@@ -90,7 +78,8 @@ fn main() {
 
     let _ = egui_logger::builder().init();
     let settings = load_app_settings();
-    set_console_visibility(settings.show_console);
+    let show_console = settings.show_console;
+    set_console_visibility(show_console);
 
     let native_options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
