@@ -260,7 +260,7 @@ impl WinchiselApp {
                 },
                 home: Self::build_home_state(settings.language),
                 cpu: processes_tab::CpuState {
-                    cpu_filter_active_only: true,
+                    cpu_filter_mode: 1,
                     cpu_visible_count: 0,
                     cpu_total_usage: "0.0%".to_string(),
                     cpu_processes_all: Vec::new(),

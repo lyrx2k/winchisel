@@ -16,7 +16,7 @@ static CPU_LABEL_CACHE: LazyLock<Mutex<HashMap<i32, CpuLabelCacheEntry>>> =
 
 #[derive(Clone)]
 pub(crate) struct CpuState {
-    pub(crate) cpu_filter_active_only: bool,
+    pub(crate) cpu_filter_mode: u8,
     pub(crate) cpu_visible_count: usize,
     pub(crate) cpu_total_usage: String,
     pub(crate) cpu_processes_all: Vec<CpuProcessRow>,
@@ -47,6 +47,7 @@ pub(crate) struct CpuProcessRow {
     pub(crate) expanded: bool,
     pub(crate) name: String,
     pub(crate) name_lc: String,
+    pub(crate) path: String,
     pub(crate) cpu_value: f32,
     pub(crate) cpu: String,
     pub(crate) priority: String,
@@ -86,6 +87,13 @@ pub(crate) enum CpuSortColumn {
     Status,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CpuFilterMode {
+    All,
+    ActiveOnly,
+    UserOnly,
+}
+
 pub(crate) struct CpuLoadResult {
     pub(crate) all_rows: Vec<CpuProcessRow>,
     pub(crate) rows: Vec<CpuProcessRow>,
@@ -102,15 +110,15 @@ impl WinchiselApp {
             return;
         }
         self.cpu_load_worker = Some(Self::spawn_cpu_worker(
-            self.state.cpu.cpu_filter_active_only,
+            self.cpu_filter_mode(),
             self.state.settings.language,
         ));
     }
 
-    pub(crate) fn spawn_cpu_worker(active_only: bool, lang: crate::Language) -> CpuLoadWorker {
+    pub(crate) fn spawn_cpu_worker(filter_mode: CpuFilterMode, lang: crate::Language) -> CpuLoadWorker {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let result = Self::load_cpu_processes(active_only, lang);
+            let result = Self::load_cpu_processes(filter_mode, lang);
             let _ = tx.send(result);
         });
         CpuLoadWorker { rx }
@@ -153,25 +161,80 @@ impl WinchiselApp {
                     return;
                 }
                 let _ = cpu_set_process_priority_class(pid, level, self.state.settings.language);
+                Self::clear_cpu_label_cache();
                 self.request_cpu_reload();
             }
             CpuAction::SetCpuAlways(name, value) => {
                 let _ = cpu_set_cpu_always_registry(&name, value, self.state.settings.language);
+                let current_level = Self::value_to_current_priority(value);
+                for pid in Self::find_pids_by_process_name(&self.state.cpu.cpu_processes, &name) {
+                    let _ = cpu_set_process_priority_class(
+                        pid,
+                        current_level,
+                        self.state.settings.language,
+                    );
+                }
+                Self::clear_cpu_label_cache();
                 self.request_cpu_reload();
             }
             CpuAction::SetIoCurrent(pid, idx) => {
                 let _ = cpu_set_process_io_priority(pid, idx, self.state.settings.language);
+                Self::clear_cpu_label_cache();
                 self.request_cpu_reload();
             }
             CpuAction::SetIoAlways(name, value) => {
                 let _ = cpu_set_io_always_registry(&name, value, self.state.settings.language);
+                for pid in Self::find_pids_by_process_name(&self.state.cpu.cpu_processes, &name) {
+                    let _ = cpu_set_process_io_priority(
+                        pid,
+                        value as i32,
+                        self.state.settings.language,
+                    );
+                }
+                Self::clear_cpu_label_cache();
                 self.request_cpu_reload();
             }
             CpuAction::SetAffinityCurrent(pid, mode) => {
                 let _ = self.set_process_affinity_mode(pid, mode);
+                Self::clear_cpu_label_cache();
                 self.request_cpu_reload();
             }
             CpuAction::Reload => self.request_cpu_reload(),
+        }
+    }
+
+    fn cpu_filter_mode(&self) -> CpuFilterMode {
+        match self.state.cpu.cpu_filter_mode {
+            0 => CpuFilterMode::All,
+            1 => CpuFilterMode::ActiveOnly,
+            2 => CpuFilterMode::UserOnly,
+            _ => CpuFilterMode::ActiveOnly,
+        }
+    }
+
+    fn clear_cpu_label_cache() {
+        if let Ok(mut cache) = CPU_LABEL_CACHE.lock() {
+            cache.clear();
+        }
+    }
+
+    fn find_pids_by_process_name(rows: &[CpuProcessRow], name: &str) -> Vec<i32> {
+        let needle = name.to_ascii_lowercase();
+        rows.iter()
+            .filter(|r| r.name_lc == needle)
+            .map(|r| r.pid)
+            .collect()
+    }
+
+    fn value_to_current_priority(value: u32) -> i32 {
+        match value {
+            1 => 0,
+            5 => 1,
+            2 => 2,
+            6 => 3,
+            3 => 4,
+            4 => 5,
+            _ => 2,
         }
     }
 
@@ -205,7 +268,7 @@ impl WinchiselApp {
     pub(crate) fn rebuild_cpu_visible_rows(&mut self) {
         self.state.cpu.cpu_processes = Self::build_cpu_tree_rows(
             &self.state.cpu.cpu_processes_all,
-            self.state.cpu.cpu_filter_active_only,
+            self.cpu_filter_mode(),
         );
         self.state.cpu.cpu_visible_count = self.state.cpu.cpu_processes.len();
         self.retain_cpu_selection();
@@ -493,7 +556,7 @@ impl WinchiselApp {
         }
     }
 
-    fn load_cpu_processes(active_only: bool, lang: crate::Language) -> CpuLoadResult {
+    fn load_cpu_processes(filter_mode: CpuFilterMode, lang: crate::Language) -> CpuLoadResult {
         use sysinfo::{ProcessesToUpdate, System};
         let mut system = System::new_all();
         system.refresh_all();
@@ -502,11 +565,24 @@ impl WinchiselApp {
         let total_cpu = system.global_cpu_usage();
         let processes = system.processes();
         let mut rows: Vec<CpuProcessRow> = Vec::with_capacity(processes.len());
+        let current_username = std::env::var("USERNAME").unwrap_or_default();
+        let current_session_id = system
+            .process(sysinfo::Pid::from_u32(std::process::id()))
+            .and_then(|p| p.session_id());
 
         for (pid, p) in processes.iter() {
+            if matches!(filter_mode, CpuFilterMode::UserOnly)
+                && !Self::is_user_process(p, &current_username, current_session_id)
+            {
+                continue;
+            }
             let (priority, affinity) = cpu_get_process_labels(pid.as_u32() as i32, lang);
             let cpu_value = p.cpu_usage();
             let name = p.name().to_string_lossy();
+            let path = p
+                .exe()
+                .map(|exe| exe.to_string_lossy().to_string())
+                .unwrap_or_default();
             rows.push(CpuProcessRow {
                 pid: pid.as_u32() as i32,
                 ppid: p.parent().map(|x| x.as_u32() as i32).unwrap_or(0),
@@ -515,6 +591,7 @@ impl WinchiselApp {
                 expanded: false,
                 name: name.to_string(),
                 name_lc: name.to_lowercase(),
+                path,
                 cpu_value,
                 cpu: format!("{:.1}%", cpu_value),
                 priority,
@@ -538,7 +615,7 @@ impl WinchiselApp {
                 },
             });
         }
-        let rows_tree = Self::build_cpu_tree_rows(&rows, active_only);
+        let rows_tree = Self::build_cpu_tree_rows(&rows, filter_mode);
         CpuLoadResult {
             all_rows: rows,
             rows: rows_tree,
@@ -546,7 +623,7 @@ impl WinchiselApp {
         }
     }
 
-    fn build_cpu_tree_rows(rows: &[CpuProcessRow], active_only: bool) -> Vec<CpuProcessRow> {
+    fn build_cpu_tree_rows(rows: &[CpuProcessRow], filter_mode: CpuFilterMode) -> Vec<CpuProcessRow> {
         let mut by_pid: HashMap<i32, CpuProcessRow> = HashMap::new();
         let mut children: HashMap<i32, Vec<i32>> = HashMap::new();
         for row in rows.iter() {
@@ -562,7 +639,7 @@ impl WinchiselApp {
             .ok()
             .and_then(|v| v.clone())
             .unwrap_or_default();
-        let active_set = if active_only {
+        let active_set = if matches!(filter_mode, CpuFilterMode::ActiveOnly) {
             Self::compute_active_cpu_set(&by_pid, &children)
         } else {
             HashSet::new()
@@ -570,7 +647,9 @@ impl WinchiselApp {
 
         let mut roots: Vec<i32> = by_pid
             .iter()
-            .filter_map(|(&pid, row)| (row.ppid <= 0 || !by_pid.contains_key(&row.ppid)).then_some(pid))
+            .filter_map(|(&pid, row)| {
+                (row.ppid <= 0 || !by_pid.contains_key(&row.ppid)).then_some(pid)
+            })
             .collect();
         Self::sort_cpu_pids(&mut roots, &by_pid, sort_column, ascending);
 
@@ -583,7 +662,11 @@ impl WinchiselApp {
                 &children,
                 &by_pid,
                 &expanded,
-                if active_only { Some(&active_set) } else { None },
+                if matches!(filter_mode, CpuFilterMode::ActiveOnly) {
+                    Some(&active_set)
+                } else {
+                    None
+                },
                 &mut path,
                 &mut out,
             );
@@ -723,16 +806,98 @@ impl WinchiselApp {
         active
     }
 
+    fn is_user_process(
+        process: &sysinfo::Process,
+        current_username: &str,
+        current_session_id: Option<sysinfo::Pid>,
+    ) -> bool {
+        let name = process.name().to_string_lossy().to_ascii_lowercase();
+        if Self::is_known_system_process(&name) {
+            return false;
+        }
+
+        let path = process
+            .exe()
+            .map(|exe| exe.to_string_lossy().to_string())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+
+        if let Some(session_id) = current_session_id
+            && let Some(row_session_id) = process.session_id()
+            && row_session_id == session_id
+        {
+            return true;
+        }
+
+        if path.contains("\\windows\\system32\\")
+            || path.contains("\\windows\\syswow64\\")
+            || path.contains("\\windows\\winsxs\\")
+            || path.contains("\\windows\\systemapps\\")
+            || path.contains("\\program files\\windowsapps\\")
+        {
+            return false;
+        }
+
+        if !current_username.is_empty() {
+            let user_hint = format!("\\users\\{}\\", current_username.to_ascii_lowercase());
+            if path.contains(&user_hint)
+                || path.contains("\\appdata\\local\\")
+                || path.contains("\\appdata\\roaming\\")
+                || path.contains("\\desktop\\")
+                || path.contains("\\downloads\\")
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn is_known_system_process(name: &str) -> bool {
+        matches!(
+            name,
+            "system"
+                | "registry"
+                | "memcompression"
+                | "smss.exe"
+                | "csrss.exe"
+                | "wininit.exe"
+                | "winlogon.exe"
+                | "services.exe"
+                | "lsass.exe"
+                | "svchost.exe"
+                | "fontdrvhost.exe"
+                | "sihost.exe"
+                | "spoolsv.exe"
+                | "dwm.exe"
+                | "wmiadap.exe"
+                | "searchhost.exe"
+                | "shellexperiencehost.exe"
+                | "startmenuexperiencehost.exe"
+                | "explorer.exe"
+                | "runtimebroker.exe"
+                | "audiodg.exe"
+                | "ctfmon.exe"
+                | "dllhost.exe"
+                | "taskhostw.exe"
+                | "conhost.exe"
+                | "cmd.exe"
+                | "powershell.exe"
+                | "vmmem"
+        )
+    }
+
     fn cpu_value(row: Option<&CpuProcessRow>) -> f32 {
-        row.map(|r| r.cpu_value)
-            .unwrap_or(0.0)
+        row.map(|r| r.cpu_value).unwrap_or(0.0)
     }
 
     pub(crate) fn render_processes_tab(&mut self, ui: &mut egui::Ui) {
         let title = self.tr("processes_title").to_string();
         let subtitle = self.tr("processes_subtitle").to_string();
         let refresh = self.tr("processes_refresh").to_string();
+        let all = self.tr("processes_all").to_string();
         let active_only_text = self.tr("processes_active_only").to_string();
+        let user_only_text = self.tr("processes_user_only").to_string();
         let refreshing = self.tr("processes_refreshing").to_string();
         let waiting = self.tr("processes_waiting_first").to_string();
         let reload_queued = self.tr("processes_reload_queued").to_string();
@@ -742,8 +907,8 @@ impl WinchiselApp {
         let priority = self.tr("processes_priority").to_string();
         let affinity = self.tr("processes_affinity").to_string();
         let status = self.tr("processes_status").to_string();
-        let collapse = self.tr("processes_collapse_tree").to_string();
-        let expand = self.tr("processes_expand_tree").to_string();
+        let collapse = self.tr("processes_expand_tree").to_string();
+        let expand = self.tr("processes_collapse_tree").to_string();
         let cpu_priority = self.tr("processes_cpu_priority").to_string();
         let current = self.tr("processes_current").to_string();
         let always = self.tr("processes_always").to_string();
@@ -766,8 +931,6 @@ impl WinchiselApp {
         let realtime_warn = self.tr("processes_realtime_warn").to_string();
         let cancel = self.tr("processes_cancel").to_string();
         let confirm = self.tr("processes_confirm").to_string();
-        let affinity_title = self.tr("processes_affinity_title").to_string();
-        let affinity_mask = self.tr("processes_affinity_mask").to_string();
         let invert = self.tr("processes_invert").to_string();
         let clear = self.tr("processes_clear").to_string();
         let close = self.tr("processes_close").to_string();
@@ -778,7 +941,9 @@ impl WinchiselApp {
                 ui.heading(title);
                 ui.label(subtitle);
             });
+            ui.add_space(8.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().interact_size.y = 34.0;
                 let loading = self.cpu_load_worker.is_some();
                 let button = egui::Button::new(refresh)
                     .fill(egui::Color32::from_rgb(35, 88, 55))
@@ -792,6 +957,37 @@ impl WinchiselApp {
                     ui.put(spinner_rect, egui::Spinner::new().size(12.0));
                 }
                 if response.clicked() && !loading {
+                    self.request_cpu_reload();
+                    ui.ctx().request_repaint();
+                }
+                ui.add_space(8.0);
+                let mut filter_mode = self.cpu_filter_mode();
+                egui::ComboBox::from_id_salt("process_filter_mode")
+                    .selected_text(match filter_mode {
+                        CpuFilterMode::All => all.clone(),
+                        CpuFilterMode::ActiveOnly => active_only_text.clone(),
+                        CpuFilterMode::UserOnly => user_only_text.clone(),
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut filter_mode, CpuFilterMode::All, all.clone());
+                        ui.selectable_value(
+                            &mut filter_mode,
+                            CpuFilterMode::ActiveOnly,
+                            active_only_text.clone(),
+                        );
+                        ui.selectable_value(
+                            &mut filter_mode,
+                            CpuFilterMode::UserOnly,
+                            user_only_text.clone(),
+                        );
+                    });
+                let filter_mode_value = match filter_mode {
+                    CpuFilterMode::All => 0,
+                    CpuFilterMode::ActiveOnly => 1,
+                    CpuFilterMode::UserOnly => 2,
+                };
+                if self.state.cpu.cpu_filter_mode != filter_mode_value {
+                    self.state.cpu.cpu_filter_mode = filter_mode_value;
                     self.request_cpu_reload();
                     ui.ctx().request_repaint();
                 }
@@ -810,27 +1006,6 @@ impl WinchiselApp {
                 self.tr("processes_total_cpu"),
                 self.state.cpu.cpu_total_usage
             ));
-            ui.separator();
-            let mut active_only = self.state.cpu.cpu_filter_active_only;
-            ui.horizontal(|ui| {
-                let resp = ui
-                    .add_enabled_ui(true, |ui| Self::native_toggle_switch(ui, &mut active_only))
-                    .inner;
-                if resp.changed() {
-                    self.state.cpu.cpu_filter_active_only = active_only;
-                    self.request_cpu_reload();
-                    ui.ctx().request_repaint();
-                }
-                let label = if active_only {
-                    egui::RichText::new(active_only_text.clone())
-                        .strong()
-                        .color(egui::Color32::from_rgb(96, 181, 103))
-                } else {
-                    egui::RichText::new(active_only_text.clone())
-                        .color(egui::Color32::from_rgb(210, 80, 80))
-                };
-                ui.label(label);
-            });
             ui.separator();
             if self.cpu_load_worker.is_some() {
                 ui.add(egui::Spinner::new().size(16.0));
@@ -1019,6 +1194,13 @@ impl WinchiselApp {
                                 self.state.cpu.cpu_selected_pid = proc_row.pid;
                                 self.state.cpu.cpu_selected_name = proc_row.name.clone();
                             }
+                            if !proc_row.path.is_empty() {
+                                ui.add_space(4.0);
+                                ui.menu_button("i", |ui| {
+                                    ui.set_min_width(420.0);
+                                    ui.monospace(proc_row.path.as_str());
+                                });
+                            }
                             name_response = Some(response);
                         });
                     });
@@ -1121,68 +1303,68 @@ impl WinchiselApp {
             let desired_height = 170.0 + (grid_rows as f32 * 34.0) + 56.0;
             let max_width = ui.ctx().content_rect().width() * 0.95;
             let max_height = ui.ctx().content_rect().height() * 0.90;
-            egui::Window::new(format!(
-                "{} - {} (PID {})",
-                affinity_title,
-                self.state.cpu.cpu_affinity_dialog_name,
-                self.state.cpu.cpu_affinity_dialog_pid
-            ))
-            .collapsible(false)
-            .resizable(false)
-            .default_width(desired_width.min(max_width).max(420.0))
-            .default_height(desired_height.min(max_height).max(260.0))
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .show(ui.ctx(), |ui| {
-                ui.label(format!(
-                    "{}{}",
-                    affinity_mask, self.state.cpu.cpu_affinity_dialog_mask
-                ));
-                ui.add_space(10.0);
-                egui::ScrollArea::vertical()
-                    .max_height(240.0)
-                    .show(ui, |ui| {
-                        egui::Grid::new("cpu_affinity_grid")
-                            .num_columns(grid_cols)
-                            .spacing([16.0, 8.0])
-                            .show(ui, |ui| {
-                                let last_col = grid_cols.saturating_sub(1) as i32;
-                                for core in self.state.cpu.cpu_affinity_cores.clone() {
-                                    let mut checked = core.checked;
-                                    let resp = ui.add_enabled(
-                                        core.enabled,
-                                        egui::Checkbox::new(&mut checked, &core.label),
-                                    );
-                                    if resp.changed() {
-                                        self.toggle_cpu_affinity_core(core.idx, checked);
+            let affinity_window_title = self
+                .tr("processes_affinity_title")
+                .replacen("{}", &self.state.cpu.cpu_affinity_dialog_name, 1)
+                .replacen("{}", &self.state.cpu.cpu_affinity_dialog_pid.to_string(), 1);
+            egui::Window::new(affinity_window_title)
+                .collapsible(false)
+                .resizable(false)
+                .default_width(desired_width.min(max_width).max(420.0))
+                .default_height(desired_height.min(max_height).max(260.0))
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .show(ui.ctx(), |ui| {
+                    ui.label(self.tr("processes_affinity_mask").replacen(
+                        "{}",
+                        &self.state.cpu.cpu_affinity_dialog_mask,
+                        1,
+                    ));
+                    ui.add_space(10.0);
+                    egui::ScrollArea::vertical()
+                        .max_height(240.0)
+                        .show(ui, |ui| {
+                            egui::Grid::new("cpu_affinity_grid")
+                                .num_columns(grid_cols)
+                                .spacing([16.0, 8.0])
+                                .show(ui, |ui| {
+                                    let last_col = grid_cols.saturating_sub(1) as i32;
+                                    for core in self.state.cpu.cpu_affinity_cores.clone() {
+                                        let mut checked = core.checked;
+                                        let resp = ui.add_enabled(
+                                            core.enabled,
+                                            egui::Checkbox::new(&mut checked, &core.label),
+                                        );
+                                        if resp.changed() {
+                                            self.toggle_cpu_affinity_core(core.idx, checked);
+                                        }
+                                        if core.col == last_col {
+                                            ui.end_row();
+                                        }
                                     }
-                                    if core.col == last_col {
-                                        ui.end_row();
-                                    }
-                                }
-                            });
+                                });
+                        });
+                    ui.add_space(12.0);
+                    ui.horizontal(|ui| {
+                        if ui.button(invert.clone()).clicked() {
+                            self.invert_cpu_affinity_selection();
+                        }
+                        if ui.button(clear.clone()).clicked() {
+                            self.clear_cpu_affinity_selection();
+                        }
+                        ui.separator();
+                        if ui.button(close.clone()).clicked() {
+                            self.state.cpu.cpu_affinity_dialog_visible = false;
+                        }
+                        if ui.button(apply.clone()).clicked() {
+                            self.apply_cpu_affinity_selection();
+                        }
                     });
-                ui.add_space(12.0);
-                ui.horizontal(|ui| {
-                    if ui.button(invert.clone()).clicked() {
-                        self.invert_cpu_affinity_selection();
-                    }
-                    if ui.button(clear.clone()).clicked() {
-                        self.clear_cpu_affinity_selection();
-                    }
-                    ui.separator();
-                    if ui.button(close.clone()).clicked() {
-                        self.state.cpu.cpu_affinity_dialog_visible = false;
-                    }
-                    if ui.button(apply.clone()).clicked() {
-                        self.apply_cpu_affinity_selection();
-                    }
                 });
-            });
         }
     }
 }
 
-fn cpu_get_process_labels(pid: i32, lang: crate::Language) -> (String, String) {
+    fn cpu_get_process_labels(pid: i32, lang: crate::Language) -> (String, String) {
     const CACHE_TTL: Duration = Duration::from_secs(30);
     if let Ok(mut cache) = CPU_LABEL_CACHE.lock() {
         cache.retain(|_, (_, _, cached_at)| cached_at.elapsed() < CACHE_TTL);
@@ -1433,6 +1615,9 @@ fn cpu_set_cpu_always_registry(
     value: u32,
     lang: crate::Language,
 ) -> Result<(), String> {
+    // TODO: Add an opt-in priority watcher for stubborn apps like Discord.
+    // The IFEO/PerfOptions write is only the launch default; some processes
+    // can overwrite their priority again after startup.
     let exe_name = if process_name.to_ascii_lowercase().ends_with(".exe") {
         process_name.to_string()
     } else {
@@ -1482,6 +1667,9 @@ fn cpu_set_io_always_registry(
     value: u32,
     lang: crate::Language,
 ) -> Result<(), String> {
+    // TODO: Add an opt-in priority watcher for stubborn apps like Discord.
+    // The IFEO/PerfOptions write is only the launch default; some processes
+    // can overwrite their priority again after startup.
     let exe_name = if process_name.to_ascii_lowercase().ends_with(".exe") {
         process_name.to_string()
     } else {
