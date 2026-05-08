@@ -1,11 +1,11 @@
 use super::{RepairDialog, RepairEvent, RepairLoadWorker, RepairResult, WinchiselApp};
 use eframe::egui;
 #[cfg(windows)]
-use std::os::windows::process::CommandExt;
-#[cfg(windows)]
 use std::io::{BufRead, BufReader};
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 impl WinchiselApp {
     pub(crate) fn start_system_repair(&mut self) {
@@ -39,7 +39,9 @@ impl WinchiselApp {
                         }
                     }
                     RepairEvent::Log(line) => {
-                        if let Some(RepairDialog::Progress { log, .. }) = self.repair_dialog.as_mut() {
+                        if let Some(RepairDialog::Progress { log, .. }) =
+                            self.repair_dialog.as_mut()
+                        {
                             log.push(line);
                             if log.len() > 12 {
                                 let excess = log.len() - 12;
@@ -148,10 +150,7 @@ fn run_system_repair_worker(lang: crate::Language, tx: mpsc::Sender<RepairEvent>
         let _ = tx.send(RepairEvent::Stage(
             crate::i18n::t(lang, "repair_stage_dism").to_string(),
         ));
-        let dism_ok = run_shell_command(
-            "DISM /Online /Cleanup-Image /RestoreHealth",
-            tx.clone(),
-        );
+        let dism_ok = run_shell_command("DISM /Online /Cleanup-Image /RestoreHealth", tx.clone());
         if !dism_ok {
             let _ = tx.send(RepairEvent::Finished(RepairResult {
                 success: false,
@@ -189,6 +188,8 @@ fn run_system_repair_worker(lang: crate::Language, tx: mpsc::Sender<RepairEvent>
 fn run_shell_command(cmd: &str, tx: mpsc::Sender<RepairEvent>) -> bool {
     use std::process::{Command, Stdio};
     const CREATE_NO_WINDOW: u32 = 0x08000000;
+    const MAX_RUNTIME: Duration = Duration::from_secs(20 * 60);
+    const STALL_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
     let script = format!(
         "$ErrorActionPreference = 'Continue'; & {{ {cmd} }} 2>&1 | ForEach-Object {{ $_.ToString() }}"
@@ -208,38 +209,67 @@ fn run_shell_command(cmd: &str, tx: mpsc::Sender<RepairEvent>) -> bool {
         }
     };
 
+    let (log_tx, log_rx) = mpsc::channel::<String>();
     let mut handles = Vec::new();
     if let Some(stdout) = child.stdout.take() {
-        let tx_out = tx.clone();
+        let log_tx_out = log_tx.clone();
         handles.push(std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines().flatten() {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
-                    let _ = tx_out.send(RepairEvent::Log(trimmed.to_string()));
+                    let _ = log_tx_out.send(trimmed.to_string());
                 }
             }
         }));
     }
     if let Some(stderr) = child.stderr.take() {
-        let tx_err = tx.clone();
+        let log_tx_err = log_tx.clone();
         handles.push(std::thread::spawn(move || {
             for line in BufReader::new(stderr).lines().flatten() {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
-                    let _ = tx_err.send(RepairEvent::Log(trimmed.to_string()));
+                    let _ = log_tx_err.send(trimmed.to_string());
                 }
             }
         }));
     }
 
-    let status = child.wait();
+    let started = Instant::now();
+    let mut last_activity = Instant::now();
+    let status: Result<_, String> = loop {
+        while let Ok(line) = log_rx.try_recv() {
+            last_activity = Instant::now();
+            let _ = tx.send(RepairEvent::Log(line));
+        }
+
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) => {
+                let elapsed = started.elapsed();
+                let stalled = last_activity.elapsed();
+                if elapsed >= MAX_RUNTIME || stalled >= STALL_TIMEOUT {
+                    let reason = if elapsed >= MAX_RUNTIME {
+                        "command timed out"
+                    } else {
+                        "command stalled"
+                    };
+                    let _ = tx.send(RepairEvent::Log(format!("{reason}; terminating process")));
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break Err(reason.to_string());
+                }
+                std::thread::sleep(Duration::from_secs(1));
+            }
+            Err(e) => break Err(format!("Failed to wait for command: {e}")),
+        }
+    };
     for handle in handles {
         let _ = handle.join();
     }
     match status {
         Ok(status) => status.success(),
-        Err(e) => {
-            let _ = tx.send(RepairEvent::Log(format!("Failed to wait for command: {e}")));
+        Err(reason) => {
+            let _ = tx.send(RepairEvent::Log(reason));
             false
         }
     }
