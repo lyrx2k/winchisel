@@ -467,7 +467,6 @@ pub fn t(key: &str) -> &'static str {
         "settings_temp_files_desc" => "Leert die TEMP-Ordner.",
         "settings_temp_files_run" => "Entfernen",
         "settings_close" => "Schließen",
-        "settings_close_now" => "Jetzt schließen",
         "settings_disk_cleanup_success" => "Datenträgerbereinigung erfolgreich abgeschlossen.",
         "settings_disk_cleanup_failed" => "Datenträgerbereinigung fehlgeschlagen.",
         "settings_disk_cleanup_failed_windows" => "Datenträgerbereinigung wird nur unter Windows unterstützt.",

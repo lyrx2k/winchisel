@@ -243,11 +243,15 @@ impl WinchiselApp {
         std::thread::spawn(move || {
             run_settings_action_worker(lang, kind, tx);
         });
-        self.settings_action_dialog = Some(SettingsActionDialog::Progress {
-            title,
-            stage: self.tr("repair_running").to_string(),
-            log: Vec::new(),
-        });
+        if !matches!(kind, SettingsActionKind::DiskCleanup) {
+            self.settings_action_dialog = Some(SettingsActionDialog::Progress {
+                title,
+                stage: self.tr("repair_running").to_string(),
+                log: Vec::new(),
+            });
+        } else {
+            self.settings_action_dialog = None;
+        }
         self.settings_action_load_worker = Some(SettingsActionLoadWorker { rx });
     }
 
@@ -278,10 +282,16 @@ impl WinchiselApp {
                     }
                     SettingsActionEvent::Finished(result) => {
                         self.settings_action_load_worker = None;
-                        self.settings_action_dialog = Some(SettingsActionDialog::Result {
-                            title: result.title,
-                            message: result.message,
-                        });
+                        if result.title == self.tr("settings_disk_cleanup") {
+                            self.toasts
+                                .success(result.message.clone())
+                                .duration(std::time::Duration::from_secs_f64(3.5));
+                        } else {
+                            self.settings_action_dialog = Some(SettingsActionDialog::Result {
+                                title: result.title,
+                                message: result.message,
+                            });
+                        }
                         break;
                     }
                 },
@@ -348,9 +358,6 @@ impl WinchiselApp {
                         ui.add_space(12.0);
                         ui.horizontal(|ui| {
                             if ui.button(self.tr("settings_close")).clicked() {
-                                self.settings_action_dialog = None;
-                            }
-                            if ui.button(self.tr("settings_close_now")).clicked() {
                                 self.settings_action_dialog = None;
                             }
                         });

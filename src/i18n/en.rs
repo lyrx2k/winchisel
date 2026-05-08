@@ -461,7 +461,6 @@ pub fn t(key: &str) -> &'static str {
         "settings_temp_files_desc" => "Erase TEMP folders.",
         "settings_temp_files_run" => "Remove",
         "settings_close" => "Close",
-        "settings_close_now" => "Close Now",
         "settings_disk_cleanup_success" => "Disk Cleanup finished successfully.",
         "settings_disk_cleanup_failed" => "Disk Cleanup failed.",
         "settings_disk_cleanup_failed_windows" => "Disk Cleanup is only supported on Windows.",
