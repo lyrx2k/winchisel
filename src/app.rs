@@ -29,6 +29,10 @@ mod privacy_security;
 mod processes_tab;
 #[path = "app/restore_point.rs"]
 mod restore_point;
+#[path = "app/repair.rs"]
+mod repair;
+#[path = "app/extras.rs"]
+mod extras;
 mod settings;
 #[path = "app/system_info.rs"]
 mod system_info;
@@ -47,6 +51,7 @@ pub(crate) enum Tab {
     Latency,
     SecurityPrivacy,
     Settings,
+    Extras,
 }
 
 #[derive(Clone)]
@@ -96,7 +101,33 @@ struct AppState {
     home: HomeState,
     cpu: processes_tab::CpuState,
     latency: latency_tab::LatencyState,
+    extras: ExtrasState,
     home_last_refresh: Option<Instant>,
+}
+
+#[derive(Clone)]
+struct ExtrasState {
+    brave_debloat_enabled: bool,
+    brave_debloat_loaded: bool,
+    edge_debloat_enabled: bool,
+    edge_debloat_loaded: bool,
+    widgets_removed_enabled: bool,
+    widgets_removed_loaded: bool,
+    ctfmon_blocked_enabled: bool,
+    ctfmon_blocked_loaded: bool,
+    ctfmon_service_dll_enabled: bool,
+    ctfmon_service_dll_loaded: bool,
+    ctfmon_service_dll_open: bool,
+    timer_resolution_enabled: bool,
+    timer_resolution_loaded: bool,
+    ipv6_preferred_enabled: bool,
+    ipv6_preferred_loaded: bool,
+    teredo_disabled_enabled: bool,
+    teredo_disabled_loaded: bool,
+    powershell7_telemetry_enabled: bool,
+    powershell7_telemetry_loaded: bool,
+    hpet_preferred_enabled: bool,
+    hpet_preferred_loaded: bool,
 }
 
 struct DownloadsLoadResult {
@@ -128,6 +159,52 @@ struct DownloadInstallWorker {
 
 struct RestorePointLoadWorker {
     rx: Receiver<RestorePointResult>,
+}
+
+struct RepairLoadWorker {
+    rx: Receiver<RepairEvent>,
+}
+
+struct SettingsActionLoadWorker {
+    rx: Receiver<SettingsActionEvent>,
+}
+
+struct ExtrasBoolWorker {
+    rx: Receiver<Result<(), String>>,
+}
+
+#[derive(Clone)]
+enum RepairDialog {
+    Progress { stage: String, log: Vec<String> },
+    Result { title: String, message: String },
+}
+
+#[derive(Clone)]
+enum SettingsActionDialog {
+    Progress { title: String, stage: String, log: Vec<String> },
+    Result { title: String, message: String },
+}
+
+enum RepairEvent {
+    Stage(String),
+    Log(String),
+    Finished(RepairResult),
+}
+
+enum SettingsActionEvent {
+    Stage(String),
+    Log(String),
+    Finished(SettingsActionResult),
+}
+
+struct RepairResult {
+    success: bool,
+    message: String,
+}
+
+struct SettingsActionResult {
+    title: String,
+    message: String,
 }
 
 #[derive(Clone)]
@@ -178,6 +255,12 @@ pub struct WinchiselApp {
     latency_load_worker: Option<latency_tab::LatencyLoadWorker>,
     restore_point_load_worker: Option<RestorePointLoadWorker>,
     restore_point_dialog: Option<RestorePointDialog>,
+    repair_load_worker: Option<RepairLoadWorker>,
+    repair_dialog: Option<RepairDialog>,
+    settings_action_load_worker: Option<SettingsActionLoadWorker>,
+    settings_action_dialog: Option<SettingsActionDialog>,
+    extras_teredo_worker: Option<ExtrasBoolWorker>,
+    extras_hpet_worker: Option<ExtrasBoolWorker>,
     toasts: Toasts,
     show_log_window: bool,
     update_check_rx: Option<Receiver<UpdateCheckResult>>,
@@ -292,6 +375,29 @@ impl WinchiselApp {
                     latency_tick_next_at: None,
                     latency_completion_ready_at: None,
                 },
+                extras: ExtrasState {
+                    brave_debloat_enabled: false,
+                    brave_debloat_loaded: false,
+                    edge_debloat_enabled: false,
+                    edge_debloat_loaded: false,
+                    widgets_removed_enabled: false,
+                    widgets_removed_loaded: false,
+                    ctfmon_blocked_enabled: false,
+                    ctfmon_blocked_loaded: false,
+                    ctfmon_service_dll_enabled: false,
+                    ctfmon_service_dll_loaded: false,
+                    ctfmon_service_dll_open: true,
+                    timer_resolution_enabled: false,
+                    timer_resolution_loaded: false,
+                    ipv6_preferred_enabled: false,
+                    ipv6_preferred_loaded: false,
+                    teredo_disabled_enabled: false,
+                    teredo_disabled_loaded: false,
+                    powershell7_telemetry_enabled: false,
+                    powershell7_telemetry_loaded: false,
+                    hpet_preferred_enabled: false,
+                    hpet_preferred_loaded: false,
+                },
                 home_last_refresh: None,
             },
             initialized_style: false,
@@ -308,6 +414,12 @@ impl WinchiselApp {
             latency_load_worker: None,
             restore_point_load_worker: None,
             restore_point_dialog: None,
+            repair_load_worker: None,
+            repair_dialog: None,
+            settings_action_load_worker: None,
+            settings_action_dialog: None,
+            extras_teredo_worker: None,
+            extras_hpet_worker: None,
             toasts: Toasts::default().with_anchor(egui_notify::Anchor::BottomRight),
             show_log_window: false,
             update_check_rx: None,
@@ -621,7 +733,12 @@ impl eframe::App for WinchiselApp {
         self.poll_performance_load();
         self.poll_cpu_load();
         self.poll_restore_point();
+        self.poll_system_repair();
+        self.poll_settings_actions();
         self.poll_update_check();
+        if self.state.active_tab == Tab::Extras && !self.state.extras.brave_debloat_loaded {
+            self.sync_extras_state();
+        }
         if self.state.settings.check_updates_on_startup
             && !self.state.update_check_started
             && !self.state.update_check_loading
@@ -821,6 +938,7 @@ impl eframe::App for WinchiselApp {
                 let tab_latency = self.tr("latency").to_string();
                 let tab_privacy_security = self.tr("privacy_security").to_string();
                 let tab_settings = self.tr("settings").to_string();
+                let tab_extras = self.tr("extras").to_string();
                 let privacy_loading = WinchiselApp::privacy_sidebar_loading(self);
                 ui.add_space(10.0);
                 ui.vertical_centered(|ui| {
@@ -881,6 +999,13 @@ impl eframe::App for WinchiselApp {
                 Self::tab_button(
                     ui,
                     &mut self.state.active_tab,
+                    Tab::Extras,
+                    &Self::sidebar_tab_label("folder-plus", &tab_extras),
+                    false,
+                );
+                Self::tab_button(
+                    ui,
+                    &mut self.state.active_tab,
                     Tab::Settings,
                     &Self::sidebar_tab_label("settings-2", &tab_settings),
                     false,
@@ -900,6 +1025,7 @@ impl eframe::App for WinchiselApp {
                     Tab::Latency => self.render_latency_tab(ui),
                     Tab::SecurityPrivacy => self.render_privacy_security_tab(ui),
                     Tab::Settings => self.render_settings_tab(ui),
+                    Tab::Extras => self.render_extras_tab(ui),
                 });
         });
 
@@ -939,6 +1065,8 @@ impl eframe::App for WinchiselApp {
 
         self.show_update_dialog(ui.ctx());
         self.show_restore_point_dialog(ui.ctx());
+        self.show_system_repair_dialog(ui.ctx());
+        self.show_settings_action_dialog(ui.ctx());
         self.show_toast_layer(ui);
         self.show_log_window(ui.ctx());
 
@@ -951,5 +1079,634 @@ impl eframe::App for WinchiselApp {
 impl WinchiselApp {
     fn bump_repaint_after(slot: &mut Option<Duration>, next: Duration) {
         *slot = Some(slot.map_or(next, |cur| cur.min(next)));
+    }
+
+    fn sync_extras_state(&mut self) {
+        self.state.extras.brave_debloat_enabled = Self::brave_debloat_enabled();
+        self.state.extras.brave_debloat_loaded = true;
+        self.state.extras.edge_debloat_enabled = Self::edge_debloat_enabled();
+        self.state.extras.edge_debloat_loaded = true;
+        self.state.extras.widgets_removed_enabled = Self::widgets_removed_enabled();
+        self.state.extras.widgets_removed_loaded = true;
+        self.state.extras.ctfmon_blocked_enabled = Self::ctfmon_blocked_enabled();
+        self.state.extras.ctfmon_blocked_loaded = true;
+        self.state.extras.ctfmon_service_dll_enabled = Self::ctfmon_service_dll_enabled();
+        self.state.extras.ctfmon_service_dll_loaded = true;
+        self.state.extras.timer_resolution_enabled = Self::timer_resolution_enabled();
+        self.state.extras.timer_resolution_loaded = true;
+        self.state.extras.ipv6_preferred_enabled = Self::ipv6_preferred_enabled();
+        self.state.extras.ipv6_preferred_loaded = true;
+        self.state.extras.teredo_disabled_enabled = Self::teredo_disabled_enabled();
+        self.state.extras.teredo_disabled_loaded = true;
+        self.state.extras.powershell7_telemetry_enabled = Self::powershell7_telemetry_enabled();
+        self.state.extras.powershell7_telemetry_loaded = true;
+        self.state.extras.hpet_preferred_enabled = Self::hpet_preferred_enabled();
+        self.state.extras.hpet_preferred_loaded = true;
+    }
+
+    #[cfg(windows)]
+    fn brave_debloat_enabled() -> bool {
+        use winreg::enums::*;
+        let root = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let Ok(key) = root.open_subkey_with_flags(r"SOFTWARE\Policies\BraveSoftware\Brave", KEY_READ) else {
+            return false;
+        };
+        let read_dword = |name: &str| -> Option<u32> { key.get_value(name).ok() };
+        read_dword("BraveRewardsDisabled") == Some(1)
+            && read_dword("BraveWalletDisabled") == Some(1)
+            && read_dword("BraveVPNDisabled") == Some(1)
+            && read_dword("BraveAIChatEnabled") == Some(0)
+            && read_dword("BraveStatsPingEnabled") == Some(0)
+    }
+
+    #[cfg(windows)]
+    fn apply_brave_debloat(enabled: bool) -> Result<(), String> {
+        use winreg::enums::*;
+        let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let (key, _) = hklm
+            .create_subkey(r"SOFTWARE\Policies\BraveSoftware\Brave")
+            .map_err(|e| format!("failed to open Brave policy key: {e}"))?;
+
+        let dword = |key: &winreg::RegKey, name: &str, value: u32| -> Result<(), String> {
+            key.set_value(name, &value)
+                .map_err(|e| format!("failed to set {name}: {e}"))
+        };
+        let remove = |key: &winreg::RegKey, name: &str| -> Result<(), String> {
+            match key.delete_value(name) {
+                Ok(_) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(format!("failed to remove {name}: {e}")),
+            }
+        };
+
+        if enabled {
+            dword(&key, "BraveRewardsDisabled", 1)?;
+            dword(&key, "BraveWalletDisabled", 1)?;
+            dword(&key, "BraveVPNDisabled", 1)?;
+            dword(&key, "BraveAIChatEnabled", 0)?;
+            dword(&key, "BraveStatsPingEnabled", 0)?;
+            dword(&key, "BraveNewsDisabled", 1)?;
+            dword(&key, "BraveTalkDisabled", 1)?;
+            dword(&key, "TorDisabled", 1)?;
+            dword(&key, "BraveP3AEnabled", 0)?;
+            dword(&key, "UrlKeyedAnonymizedDataCollectionEnabled", 0)?;
+            dword(&key, "SafeBrowsingExtendedReportingEnabled", 0)?;
+            dword(&key, "MetricsReportingEnabled", 0)?;
+        } else {
+            for name in [
+                "BraveRewardsDisabled",
+                "BraveWalletDisabled",
+                "BraveVPNDisabled",
+                "BraveAIChatEnabled",
+                "BraveStatsPingEnabled",
+                "BraveNewsDisabled",
+                "BraveTalkDisabled",
+                "TorDisabled",
+                "BraveP3AEnabled",
+                "UrlKeyedAnonymizedDataCollectionEnabled",
+                "SafeBrowsingExtendedReportingEnabled",
+                "MetricsReportingEnabled",
+            ] {
+                remove(&key, name)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn edge_debloat_enabled() -> bool {
+        use winreg::enums::*;
+        let root = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let Ok(edge) = root.open_subkey_with_flags(r"SOFTWARE\Policies\Microsoft\Edge", KEY_READ) else {
+            return false;
+        };
+        let Ok(edge_update) =
+            root.open_subkey_with_flags(r"SOFTWARE\Policies\Microsoft\EdgeUpdate", KEY_READ)
+        else {
+            return false;
+        };
+        let Ok(blocklist) = root.open_subkey_with_flags(
+            r"SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallBlocklist",
+            KEY_READ,
+        ) else {
+            return false;
+        };
+        let read_dword = |key: &winreg::RegKey, name: &str| -> Option<u32> { key.get_value(name).ok() };
+        let read_string = |key: &winreg::RegKey, name: &str| -> Option<String> { key.get_value(name).ok() };
+
+        read_dword(&edge_update, "CreateDesktopShortcutDefault") == Some(0)
+            && read_dword(&edge, "PersonalizationReportingEnabled") == Some(0)
+            && read_string(&blocklist, "1").as_deref()
+                == Some("ofefcgjbeghpigppfmkologfjadafddi")
+            && read_dword(&edge, "ShowRecommendationsEnabled") == Some(0)
+            && read_dword(&edge, "HideFirstRunExperience") == Some(1)
+            && read_dword(&edge, "UserFeedbackAllowed") == Some(0)
+            && read_dword(&edge, "ConfigureDoNotTrack") == Some(1)
+            && read_dword(&edge, "AlternateErrorPagesEnabled") == Some(0)
+            && read_dword(&edge, "EdgeCollectionsEnabled") == Some(0)
+            && read_dword(&edge, "EdgeShoppingAssistantEnabled") == Some(0)
+            && read_dword(&edge, "MicrosoftEdgeInsiderPromotionEnabled") == Some(0)
+            && read_dword(&edge, "ShowMicrosoftRewards") == Some(0)
+            && read_dword(&edge, "WebWidgetAllowed") == Some(0)
+            && read_dword(&edge, "DiagnosticData") == Some(0)
+            && read_dword(&edge, "EdgeAssetDeliveryServiceEnabled") == Some(0)
+            && read_dword(&edge, "WalletDonationEnabled") == Some(0)
+            && read_dword(&edge, "DefaultBrowserSettingsCampaignEnabled") == Some(0)
+    }
+
+    #[cfg(windows)]
+    fn widgets_removed_enabled() -> bool {
+        Self::ps_lines(
+            "Get-AppxPackage Microsoft.WidgetsPlatformRuntime -AllUsers; Get-AppxPackage MicrosoftWindows.Client.WebExperience -AllUsers",
+        )
+        .is_empty()
+    }
+
+    #[cfg(windows)]
+    fn ctfmon_blocked_enabled() -> bool {
+        use winreg::enums::*;
+        let root = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let Ok(key) = root.open_subkey_with_flags(r"Software\Microsoft\Input", KEY_READ) else {
+            return false;
+        };
+        let read_dword = |name: &str| -> Option<u32> { key.get_value(name).ok() };
+        read_dword("InputServiceEnabled") == Some(0)
+            && read_dword("InputServiceEnabledForCCI") == Some(0)
+    }
+
+    #[cfg(windows)]
+    fn ctfmon_service_dll_enabled() -> bool {
+        use winreg::enums::*;
+        let root = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let Ok(key) = root.open_subkey_with_flags(
+            r"SYSTEM\CurrentControlSet\Services\TextInputManagementService\Parameters",
+            KEY_READ,
+        ) else {
+            return false;
+        };
+        key.get_value::<String, _>("ServiceDll")
+            .map(|value| value.eq_ignore_ascii_case(r"%SystemRoot%\System32\MSCTF.DLL"))
+            .unwrap_or(false)
+    }
+
+    #[cfg(windows)]
+    fn timer_resolution_enabled() -> bool {
+        use winreg::enums::*;
+        let root = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let Ok(key) = root.open_subkey_with_flags(
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\kernel",
+            KEY_READ,
+        ) else {
+            return false;
+        };
+        key.get_value::<u32, _>("GlobalTimerResolutionRequests")
+            .map(|value| value == 1)
+            .unwrap_or(false)
+    }
+
+    #[cfg(not(windows))]
+    fn timer_resolution_enabled() -> bool {
+        false
+    }
+
+    #[cfg(not(windows))]
+    fn ctfmon_blocked_enabled() -> bool {
+        false
+    }
+
+    #[cfg(not(windows))]
+    fn ctfmon_service_dll_enabled() -> bool {
+        false
+    }
+
+    #[cfg(not(windows))]
+    fn widgets_removed_enabled() -> bool {
+        false
+    }
+
+    #[cfg(windows)]
+    fn apply_edge_debloat(enabled: bool) -> Result<(), String> {
+        use winreg::enums::*;
+        let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let (edge, _) = hklm
+            .create_subkey(r"SOFTWARE\Policies\Microsoft\Edge")
+            .map_err(|e| format!("failed to open Edge policy key: {e}"))?;
+        let (edge_update, _) = hklm
+            .create_subkey(r"SOFTWARE\Policies\Microsoft\EdgeUpdate")
+            .map_err(|e| format!("failed to open EdgeUpdate policy key: {e}"))?;
+        let (blocklist, _) = hklm
+            .create_subkey(r"SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallBlocklist")
+            .map_err(|e| format!("failed to open Edge blocklist key: {e}"))?;
+
+        let dword = |key: &winreg::RegKey, name: &str, value: u32| -> Result<(), String> {
+            key.set_value(name, &value)
+                .map_err(|e| format!("failed to set {name}: {e}"))
+        };
+        let string = |key: &winreg::RegKey, name: &str, value: &str| -> Result<(), String> {
+            key.set_value(name, &value)
+                .map_err(|e| format!("failed to set {name}: {e}"))
+        };
+        let remove = |key: &winreg::RegKey, name: &str| -> Result<(), String> {
+            match key.delete_value(name) {
+                Ok(_) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(format!("failed to remove {name}: {e}")),
+            }
+        };
+
+        if enabled {
+            dword(&edge_update, "CreateDesktopShortcutDefault", 0)?;
+            dword(&edge, "PersonalizationReportingEnabled", 0)?;
+            string(&blocklist, "1", "ofefcgjbeghpigppfmkologfjadafddi")?;
+            dword(&edge, "ShowRecommendationsEnabled", 0)?;
+            dword(&edge, "HideFirstRunExperience", 1)?;
+            dword(&edge, "UserFeedbackAllowed", 0)?;
+            dword(&edge, "ConfigureDoNotTrack", 1)?;
+            dword(&edge, "AlternateErrorPagesEnabled", 0)?;
+            dword(&edge, "EdgeCollectionsEnabled", 0)?;
+            dword(&edge, "EdgeShoppingAssistantEnabled", 0)?;
+            dword(&edge, "MicrosoftEdgeInsiderPromotionEnabled", 0)?;
+            dword(&edge, "ShowMicrosoftRewards", 0)?;
+            dword(&edge, "WebWidgetAllowed", 0)?;
+            dword(&edge, "DiagnosticData", 0)?;
+            dword(&edge, "EdgeAssetDeliveryServiceEnabled", 0)?;
+            dword(&edge, "WalletDonationEnabled", 0)?;
+            dword(&edge, "DefaultBrowserSettingsCampaignEnabled", 0)?;
+        } else {
+            for name in [
+                "CreateDesktopShortcutDefault",
+            ] {
+                remove(&edge_update, name)?;
+            }
+            for name in [
+                "PersonalizationReportingEnabled",
+                "ShowRecommendationsEnabled",
+                "HideFirstRunExperience",
+                "UserFeedbackAllowed",
+                "ConfigureDoNotTrack",
+                "AlternateErrorPagesEnabled",
+                "EdgeCollectionsEnabled",
+                "EdgeShoppingAssistantEnabled",
+                "MicrosoftEdgeInsiderPromotionEnabled",
+                "ShowMicrosoftRewards",
+                "WebWidgetAllowed",
+                "DiagnosticData",
+                "EdgeAssetDeliveryServiceEnabled",
+                "WalletDonationEnabled",
+                "DefaultBrowserSettingsCampaignEnabled",
+            ] {
+                remove(&edge, name)?;
+            }
+            remove(&blocklist, "1")?;
+        }
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn apply_widgets_removed(enabled: bool) -> Result<(), String> {
+        use std::process::{Command, Stdio};
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let script = if enabled {
+            r#"
+$ErrorActionPreference = 'SilentlyContinue'
+Get-Process *Widget* | Stop-Process
+Get-AppxPackage Microsoft.WidgetsPlatformRuntime -AllUsers | Remove-AppxPackage -AllUsers
+Get-AppxPackage MicrosoftWindows.Client.WebExperience -AllUsers | Remove-AppxPackage -AllUsers
+Invoke-WinUtilExplorerUpdate -action "restart"
+"#
+        } else {
+            r#"
+$ErrorActionPreference = 'SilentlyContinue'
+Add-AppxPackage -Register "C:\Program Files\WindowsApps\Microsoft.WidgetsPlatformRuntime*\AppxManifest.xml" -DisableDevelopmentMode
+Add-AppxPackage -Register "C:\Program Files\WindowsApps\MicrosoftWindows.Client.WebExperience*\AppxManifest.xml" -DisableDevelopmentMode
+Invoke-WinUtilExplorerUpdate -action "restart"
+"#
+        };
+
+        let status = Command::new("powershell.exe")
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                script,
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map_err(|e| format!("failed to run widgets command: {e}"))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("widgets command failed".to_string())
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn apply_widgets_removed(_enabled: bool) -> Result<(), String> {
+        Err("Widgets tweak is only supported on Windows".to_string())
+    }
+
+    #[cfg(windows)]
+    fn apply_ctfmon_blocked(enabled: bool) -> Result<(), String> {
+        use winreg::enums::*;
+        let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let (key, _) = hklm
+            .create_subkey(r"Software\Microsoft\Input")
+            .map_err(|e| format!("failed to open Microsoft Input key: {e}"))?;
+        let value = if enabled { 0u32 } else { 1u32 };
+        key.set_value("InputServiceEnabled", &value)
+            .map_err(|e| format!("failed to set InputServiceEnabled: {e}"))?;
+        key.set_value("InputServiceEnabledForCCI", &value)
+            .map_err(|e| format!("failed to set InputServiceEnabledForCCI: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    fn apply_ctfmon_blocked(_enabled: bool) -> Result<(), String> {
+        Err("CTFMON tweak is only supported on Windows".to_string())
+    }
+
+    #[cfg(windows)]
+    fn apply_ctfmon_service_dll(enabled: bool) -> Result<(), String> {
+        use winreg::enums::*;
+        let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let (key, _) = hklm
+            .create_subkey(r"SYSTEM\CurrentControlSet\Services\TextInputManagementService\Parameters")
+            .map_err(|e| format!("failed to open TextInputManagementService parameters: {e}"))?;
+        let value = if enabled {
+            r"%SystemRoot%\System32\MSCTF.DLL"
+        } else {
+            r"%SystemRoot%\System32\TabSvc.dll"
+        };
+        key.set_value("ServiceDll", &value)
+            .map_err(|e| format!("failed to set ServiceDll: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    fn apply_ctfmon_service_dll(_enabled: bool) -> Result<(), String> {
+        Err("CTFMON ServiceDll tweak is only supported on Windows".to_string())
+    }
+
+    #[cfg(windows)]
+    fn apply_timer_resolution(enabled: bool) -> Result<(), String> {
+        use winreg::enums::*;
+        let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let (key, _) = hklm
+            .create_subkey(r"SYSTEM\CurrentControlSet\Control\Session Manager\kernel")
+            .map_err(|e| format!("failed to open kernel key: {e}"))?;
+        if enabled {
+            key.set_value("GlobalTimerResolutionRequests", &1u32)
+                .map_err(|e| format!("failed to set GlobalTimerResolutionRequests: {e}"))?;
+        } else {
+            match key.delete_value("GlobalTimerResolutionRequests") {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(format!(
+                        "failed to remove GlobalTimerResolutionRequests: {e}"
+                    ))
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    fn apply_timer_resolution(_enabled: bool) -> Result<(), String> {
+        Err("Timer resolution tweak is only supported on Windows".to_string())
+    }
+
+    #[cfg(not(windows))]
+    fn brave_debloat_enabled() -> bool {
+        false
+    }
+
+    #[cfg(not(windows))]
+    fn apply_brave_debloat(_enabled: bool) -> Result<(), String> {
+        Err("Brave debloat is only supported on Windows".to_string())
+    }
+
+    #[cfg(not(windows))]
+    fn edge_debloat_enabled() -> bool {
+        false
+    }
+
+    #[cfg(not(windows))]
+    fn apply_edge_debloat(_enabled: bool) -> Result<(), String> {
+        Err("Edge debloat is only supported on Windows".to_string())
+    }
+
+    #[cfg(windows)]
+    fn ipv6_preferred_enabled() -> bool {
+        use winreg::enums::*;
+        let root = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let Ok(key) = root.open_subkey_with_flags(
+            r"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters",
+            KEY_READ,
+        ) else {
+            return false;
+        };
+        key.get_value::<u32, _>("DisabledComponents")
+            .map(|value| value & 0x20 != 0)
+            .unwrap_or(false)
+    }
+
+    #[cfg(windows)]
+    fn apply_ipv6_preferred(enabled: bool) -> Result<(), String> {
+        use winreg::enums::*;
+        let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let (key, _) = hklm
+            .create_subkey(r"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters")
+            .map_err(|e| format!("failed to open Tcpip6 parameters: {e}"))?;
+        let current = key.get_value::<u32, _>("DisabledComponents").unwrap_or(0);
+        let next = if enabled { current | 0x20 } else { current & !0x20 };
+        key.set_value("DisabledComponents", &next)
+            .map_err(|e| format!("failed to set DisabledComponents: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    fn ipv6_preferred_enabled() -> bool {
+        false
+    }
+
+    #[cfg(not(windows))]
+    fn apply_ipv6_preferred(_enabled: bool) -> Result<(), String> {
+        Err("IPv6 preference is only supported on Windows".to_string())
+    }
+
+    #[cfg(windows)]
+    fn teredo_disabled_enabled() -> bool {
+        use winreg::enums::*;
+        let root = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let Ok(key) = root.open_subkey_with_flags(
+            r"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters",
+            KEY_READ,
+        ) else {
+            return false;
+        };
+        key.get_value::<u32, _>("DisabledComponents")
+            .map(|value| value & 0x01 != 0)
+            .unwrap_or(false)
+    }
+
+    #[cfg(windows)]
+    fn apply_teredo_disabled(enabled: bool) -> Result<(), String> {
+        use std::process::Command;
+        use std::process::Stdio;
+        use std::os::windows::process::CommandExt;
+        use winreg::enums::*;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let (key, _) = hklm
+            .create_subkey(r"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters")
+            .map_err(|e| format!("failed to open Tcpip6 parameters: {e}"))?;
+        let current = key.get_value::<u32, _>("DisabledComponents").unwrap_or(0);
+        let next = if enabled { current | 0x01 } else { current & !0x01 };
+        key.set_value("DisabledComponents", &next)
+            .map_err(|e| format!("failed to set DisabledComponents: {e}"))?;
+        let state = if enabled { "disabled" } else { "default" };
+        let status = Command::new("netsh")
+            .args(["interface", "teredo", "set", "state", state])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map_err(|e| format!("failed to run netsh: {e}"))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("netsh teredo command failed".to_string())
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn teredo_disabled_enabled() -> bool {
+        false
+    }
+
+    #[cfg(not(windows))]
+    fn apply_teredo_disabled(_enabled: bool) -> Result<(), String> {
+        Err("Teredo is only supported on Windows".to_string())
+    }
+
+    #[cfg(windows)]
+    fn powershell7_telemetry_enabled() -> bool {
+        use winreg::enums::*;
+        let root = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let Ok(key) = root.open_subkey_with_flags(
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+            KEY_READ,
+        ) else {
+            return false;
+        };
+        key.get_value::<String, _>("POWERSHELL_TELEMETRY_OPTOUT")
+            .map(|value| value == "1")
+            .unwrap_or(false)
+    }
+
+    #[cfg(windows)]
+    fn apply_powershell7_telemetry(enabled: bool) -> Result<(), String> {
+        use winreg::enums::*;
+        let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let (key, _) = hklm
+            .create_subkey(r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")
+            .map_err(|e| format!("failed to open machine environment key: {e}"))?;
+        if enabled {
+            key.set_value("POWERSHELL_TELEMETRY_OPTOUT", &"1")
+                .map_err(|e| format!("failed to set POWERSHELL_TELEMETRY_OPTOUT: {e}"))?;
+        } else {
+            match key.delete_value("POWERSHELL_TELEMETRY_OPTOUT") {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(format!("failed to remove POWERSHELL_TELEMETRY_OPTOUT: {e}")),
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    fn powershell7_telemetry_enabled() -> bool {
+        false
+    }
+
+    #[cfg(not(windows))]
+    fn apply_powershell7_telemetry(_enabled: bool) -> Result<(), String> {
+        Err("PowerShell 7 telemetry is only supported on Windows".to_string())
+    }
+
+    #[cfg(windows)]
+    fn hpet_preferred_enabled() -> bool {
+        use std::process::{Command, Stdio};
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let output = Command::new("bcdedit")
+            .args(["/enum", "{current}"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output();
+        match output {
+            Ok(output) if output.status.success() => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                stdout
+                    .lines()
+                    .find_map(|line| {
+                        let trimmed = line.trim();
+                        let (key, value) = trimmed.split_once(char::is_whitespace)?;
+                        if !key.eq_ignore_ascii_case("useplatformclock") {
+                            return None;
+                        }
+                        let value = value.trim().to_ascii_lowercase();
+                        Some(matches!(value.as_str(), "false" | "no" | "0"))
+                    })
+                    .unwrap_or(false)
+            }
+            _ => false,
+        }
+    }
+
+    #[cfg(windows)]
+    fn apply_hpet_preferred(enabled: bool) -> Result<(), String> {
+        use std::process::{Command, Stdio};
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let value = if enabled { "false" } else { "true" };
+        let status = Command::new("bcdedit")
+            .args(["/set", "useplatformclock", value])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map_err(|e| format!("failed to run bcdedit: {e}"))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("bcdedit useplatformclock command failed".to_string())
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn hpet_preferred_enabled() -> bool {
+        false
+    }
+
+    #[cfg(not(windows))]
+    fn apply_hpet_preferred(_enabled: bool) -> Result<(), String> {
+        Err("HPET toggle is only supported on Windows".to_string())
     }
 }

@@ -256,6 +256,8 @@ impl WinchiselApp {
                 .replacen("{}", &ok.to_string(), 1)
                 .replacen("{}", &fail.to_string(), 1)
         };
+        self.state.debloater.debloater_selected =
+            vec![false; self.state.debloater.debloater_items.len()];
         self.debloater_cache_ready = false;
         self.state.debloater.debloater_filter_cache_query.clear();
         self.state.debloater.debloater_filter_cache_tab = usize::MAX;
