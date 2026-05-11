@@ -1274,6 +1274,7 @@ pub fn t(key: &str) -> &'static str {
         "home_section_hardware" => "Hardware",
         "home_section_system" => "System",
         "home_motherboard" => "Mainboard",
+        "home_display" => "Monitor",
         "CompatibilityAppraiserTask" => {
             "Sammelt Kompatibilitäts-Telemetriedaten von Programmen für Windows-Upgrades. Arbeitet mit dem Dienst 'Connected User Experiences and Telemetry' zusammen. Deaktiviere dies, um Telemetrie und Hintergrundaktivität zu reduzieren"
         }

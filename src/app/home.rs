@@ -47,12 +47,17 @@ impl WinchiselApp {
             .max_col_width(col_w)
             .spacing(egui::vec2(gap, gap))
             .show(ui, |ui| {
+                let cpu_sub = if home.cpu_speed.is_empty() {
+                    home.cpu_cores.clone()
+                } else {
+                    format!("{} · {}", home.cpu_cores, home.cpu_speed)
+                };
                 self.hardware_card(
                     ui,
                     "cpu",
                     self.tr("home_processor"),
                     &home.cpu_brand,
-                    Some(&home.cpu_cores),
+                    Some(&cpu_sub),
                     None,
                     Some(&home.cpu_usage),
                     (home.cpu_usage_percent / 100.0).clamp(0.0, 1.0),
@@ -71,12 +76,13 @@ impl WinchiselApp {
                 );
                 ui.end_row();
                 let mem_pct = (home.memory_used_gb / home.memory_total_gb.max(1.0) * 100.0) as i32;
+                let mem_value = format!("{} · {}", home.memory_total, home.memory_used);
                 self.hardware_card(
                     ui,
                     "memory-stick",
                     self.tr("home_memory"),
-                    &home.memory_total,
-                    Some(&home.memory_used),
+                    &mem_value,
+                    Some(&home.ram_details),
                     None,
                     Some(&format!("{mem_pct}%")),
                     (home.memory_used_gb / home.memory_total_gb.max(1.0)).clamp(0.0, 1.0) as f32,
@@ -101,7 +107,7 @@ impl WinchiselApp {
     fn render_system_cards(&self, ui: &mut egui::Ui, home: &HomeState) {
         let gap = 12.0;
         let full = ui.available_width();
-        let card_w = ((full - gap * 2.0) / 3.0).floor().max(120.0);
+        let card_w = ((full - gap * 3.0) / 4.0).floor().max(120.0);
         let cards = [
             (
                 "layout-dashboard",
@@ -125,6 +131,14 @@ impl WinchiselApp {
                 },
                 None,
                 egui::Color32::from_rgb(96, 181, 103),
+            ),
+            (
+                "scan",
+                self.tr("home_display"),
+                home.display_info.as_str(),
+                None,
+                None,
+                egui::Color32::from_rgb(10, 210, 254),
             ),
             (
                 "clock-3",

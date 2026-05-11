@@ -15,6 +15,7 @@ impl WinchiselApp {
         let cpu_cores = System::physical_core_count()
             .or_else(|| Some(system.cpus().len()))
             .unwrap_or(0);
+        let cpu_speed = Self::read_cpu_speed(system);
         let (gpu_name, _, gpu_vram) = Self::read_gpu_info(lang);
         let gpu_driver_version = Self::read_gpu_driver_version(&gpu_name);
         let (system_model, system_manufacturer, bios_version, bios_date) =
@@ -29,6 +30,8 @@ impl WinchiselApp {
         } else {
             format!("{} {}", system_manufacturer, system_model)
         };
+        let ram_details = Self::read_ram_details();
+        let display_info = Self::read_display_info();
 
         let total_memory_gb = system.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
         let used_memory_gb = system.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
@@ -63,6 +66,7 @@ impl WinchiselApp {
                 &cpu_cores.to_string(),
                 1,
             ),
+            cpu_speed,
             gpu_name: if gpu_name.is_empty() {
                 i18n::t(lang, "home_unknown_gpu").to_string()
             } else {
@@ -97,6 +101,8 @@ impl WinchiselApp {
             storage_used_gb: used_disk_gb,
             cpu_usage,
             cpu_usage_percent,
+            ram_details,
+            display_info,
             uptime: format!(
                 "{}d {:02}h {:02}m",
                 uptime_secs / 86_400,
@@ -104,6 +110,59 @@ impl WinchiselApp {
                 (uptime_secs % 3_600) / 60
             ),
         }
+    }
+
+    fn read_cpu_speed(system: &sysinfo::System) -> String {
+        system
+            .cpus()
+            .first()
+            .map(|cpu| {
+                let mhz = cpu.frequency();
+                if mhz >= 1000 {
+                    format!("{:.2} GHz", mhz as f64 / 1000.0)
+                } else if mhz > 0 {
+                    format!("{} MHz", mhz)
+                } else {
+                    String::new()
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    fn read_ram_details() -> String {
+        use std::sync::OnceLock;
+        static CACHE: OnceLock<String> = OnceLock::new();
+        CACHE
+            .get_or_init(|| {
+                let cmd = r#"
+$sticks = Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue
+if (-not $sticks) { exit }
+$speed = ($sticks | Select-Object -First 1).Speed
+$typeCode = ($sticks | Select-Object -First 1).SMBIOSMemoryType
+$type = switch ($typeCode) { 26 {'DDR4'} 34 {'DDR5'} default {"DDR"}}
+$count = $sticks.Count
+$each = [math]::Round(($sticks | Select-Object -First 1).Capacity / 1GB, 0)
+Write-Output "$count x $each GB $speed MHz $type"
+"#;
+                Self::ps_lines(cmd)
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default()
+            })
+            .clone()
+    }
+
+    fn read_display_info() -> String {
+        let cmd = r#"
+$dm = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Where-Object { $_.CurrentHorizontalResolution -gt 0 } | Select-Object -First 1
+if ($dm) {
+    "$($dm.CurrentHorizontalResolution)x$($dm.CurrentVerticalResolution) @ $($dm.CurrentRefreshRate)Hz"
+}
+"#;
+        Self::ps_lines(cmd)
+            .into_iter()
+            .next()
+            .unwrap_or_default()
     }
 
     fn read_gpu_info(lang: Language) -> (String, Option<String>, String) {

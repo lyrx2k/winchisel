@@ -92,6 +92,9 @@ pub(crate) struct HomeState {
     storage_used_gb: f64,
     cpu_usage: String,
     cpu_usage_percent: f32,
+    cpu_speed: String,
+    ram_details: String,
+    display_info: String,
     uptime: String,
 }
 

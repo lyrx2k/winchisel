@@ -1303,6 +1303,7 @@ pub fn t(key: &str) -> &'static str {
         "home_section_hardware" => "Hardware",
         "home_section_system" => "System",
         "home_motherboard" => "Motherboard",
+        "home_display" => "Display",
         _ => "",
     }
 }
