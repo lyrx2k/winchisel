@@ -13,6 +13,7 @@ enum ExtrasKind {
     Ps7,
     Hpet,
     ModernStandby,
+    SyncProvider,
 }
 
 impl WinchiselApp {
@@ -98,6 +99,7 @@ impl WinchiselApp {
                     || !self.state.extras.powershell7_telemetry_loaded
                     || !self.state.extras.hpet_preferred_loaded
                     || !self.state.extras.modern_standby_disabled_loaded
+                    || !self.state.extras.sync_provider_disabled_loaded
                     || !self.state.extras.winchisel_power_plan_loaded
                 {
                     ui.add_space(40.0);
@@ -112,6 +114,8 @@ impl WinchiselApp {
                 self.extras_power_plan_section(ui);
                 ui.add_space(8.0);
                 self.extras_policy_row(ui, ExtrasKind::ModernStandby);
+                ui.add_space(8.0);
+                self.extras_policy_row(ui, ExtrasKind::SyncProvider);
                 ui.add_space(8.0);
                 self.extras_policy_row(ui, ExtrasKind::Brave);
                 ui.add_space(8.0);
@@ -190,6 +194,12 @@ impl WinchiselApp {
                 self.modern_standby_tooltip(),
                 self.state.extras.modern_standby_disabled_enabled,
             ),
+            ExtrasKind::SyncProvider => (
+                self.tr("extras_sync_provider_label"),
+                self.tr("extras_sync_provider_desc"),
+                self.sync_provider_tooltip(),
+                self.state.extras.sync_provider_disabled_enabled,
+            ),
         };
         let pending = matches!(kind, ExtrasKind::Teredo) && self.extras_teredo_worker.is_some()
             || matches!(kind, ExtrasKind::Hpet) && self.extras_hpet_worker.is_some();
@@ -211,7 +221,11 @@ impl WinchiselApp {
                         |ui| {
                             ui.set_width(left_width);
                             ui.horizontal(|ui| {
-                                ui.label(label);
+                                ui.label(
+                                    egui::RichText::new(label)
+                                        .color(egui::Color32::from_rgb(232, 232, 232))
+                                        .size(13.0),
+                                );
                                 let info = ui.add(
                                     egui::Label::new(
                                         egui::RichText::new("?")
@@ -223,7 +237,11 @@ impl WinchiselApp {
                                 info.on_hover_text(tooltip.clone());
                             });
                             ui.add_space(2.0);
-                            ui.label(desc);
+                            ui.label(
+                                egui::RichText::new(desc)
+                                    .color(egui::Color32::from_rgb(190, 190, 190))
+                                    .size(11.0),
+                            );
                         },
                     );
 
@@ -277,6 +295,9 @@ impl WinchiselApp {
                                     ExtrasKind::ModernStandby => {
                                         Self::apply_modern_standby_disabled(local_enabled)
                                     }
+                                    ExtrasKind::SyncProvider => {
+                                        Self::apply_sync_provider_disabled(local_enabled)
+                                    }
                                 };
                                 if let Err(err) = result {
                                     self.toasts
@@ -310,6 +331,14 @@ impl WinchiselApp {
                                     ExtrasKind::Hpet => {
                                         self.state.extras.hpet_preferred_enabled = local_enabled;
                                     }
+                                    ExtrasKind::ModernStandby => {
+                                        self.state.extras.modern_standby_disabled_enabled =
+                                            local_enabled;
+                                    }
+                                    ExtrasKind::SyncProvider => {
+                                        self.state.extras.sync_provider_disabled_enabled =
+                                            local_enabled;
+                                    }
                                 }
                             }
                         },
@@ -336,7 +365,11 @@ impl WinchiselApp {
                         |ui| {
                             ui.set_width(text_width);
                             ui.horizontal(|ui| {
-                                ui.label(self.tr("extras_ctfmon_label"));
+                                ui.label(
+                                    egui::RichText::new(self.tr("extras_ctfmon_label"))
+                                        .color(egui::Color32::from_rgb(232, 232, 232))
+                                        .size(13.0),
+                                );
                                 let info = ui.add(
                                     egui::Label::new(
                                         egui::RichText::new("?")
@@ -348,7 +381,11 @@ impl WinchiselApp {
                                 info.on_hover_text(self.ctfmon_tooltip());
                             });
                             ui.add_space(2.0);
-                            ui.label(self.tr("extras_ctfmon_desc"));
+                            ui.label(
+                                egui::RichText::new(self.tr("extras_ctfmon_desc"))
+                                    .color(egui::Color32::from_rgb(190, 190, 190))
+                                    .size(11.0),
+                            );
                         },
                     );
 
@@ -476,9 +513,17 @@ impl WinchiselApp {
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
                             ui.set_width(left_width);
-                            ui.label(self.tr("extras_ctfmon_details_label"));
+                            ui.label(
+                                egui::RichText::new(self.tr("extras_ctfmon_details_label"))
+                                    .color(egui::Color32::from_rgb(232, 232, 232))
+                                    .size(13.0),
+                            );
                             ui.add_space(2.0);
-                            ui.label(self.tr("extras_ctfmon_details_desc"));
+                            ui.label(
+                                egui::RichText::new(self.tr("extras_ctfmon_details_desc"))
+                                    .color(egui::Color32::from_rgb(190, 190, 190))
+                                    .size(11.0),
+                            );
                         },
                     );
                     ui.allocate_ui_with_layout(
@@ -534,6 +579,25 @@ impl WinchiselApp {
         .join("\n")
     }
 
+    fn modern_standby_tooltip(&self) -> String {
+        [
+            r"HKLM\SYSTEM\CurrentControlSet\Control\Power\PlatformAoAcOverride = 0",
+            "Disables S0 Modern Standby to prevent battery drain and heat in sleep.",
+            "Off removes the value again.",
+            "Requires a reboot to take effect.",
+        ]
+        .join("\n")
+    }
+
+    fn sync_provider_tooltip(&self) -> String {
+        [
+            r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced\ShowSyncProviderNotifications = 0",
+            "Disables sync provider notifications in File Explorer.",
+            "Off sets the value back to 1.",
+        ]
+        .join("\n")
+    }
+
     fn extras_power_plan_section(&mut self, ui: &mut egui::Ui) {
         egui::Frame::new()
             .fill(egui::Color32::from_rgb(20, 20, 23))
@@ -551,9 +615,17 @@ impl WinchiselApp {
                         |ui| {
                             ui.vertical(|ui| {
                                 ui.set_width(text_width);
-                                ui.label(self.tr("extras_power_plan_label"));
+                                ui.label(
+                                    egui::RichText::new(self.tr("extras_power_plan_label"))
+                                        .color(egui::Color32::from_rgb(232, 232, 232))
+                                        .size(13.0),
+                                );
                                 ui.add_space(2.0);
-                                ui.label(self.tr("extras_power_plan_desc"));
+                                ui.label(
+                                    egui::RichText::new(self.tr("extras_power_plan_desc"))
+                                        .color(egui::Color32::from_rgb(190, 190, 190))
+                                        .size(11.0),
+                                );
                             });
                         },
                     );

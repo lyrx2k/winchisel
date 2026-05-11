@@ -139,6 +139,10 @@ struct ExtrasState {
     powershell7_telemetry_loaded: bool,
     hpet_preferred_enabled: bool,
     hpet_preferred_loaded: bool,
+    modern_standby_disabled_enabled: bool,
+    modern_standby_disabled_loaded: bool,
+    sync_provider_disabled_enabled: bool,
+    sync_provider_disabled_loaded: bool,
     winchisel_power_plan_enabled: bool,
     winchisel_power_plan_loaded: bool,
 }
@@ -463,6 +467,10 @@ impl WinchiselApp {
                     powershell7_telemetry_loaded: false,
                     hpet_preferred_enabled: false,
                     hpet_preferred_loaded: false,
+                    modern_standby_disabled_enabled: false,
+                    modern_standby_disabled_loaded: false,
+                    sync_provider_disabled_enabled: false,
+                    sync_provider_disabled_loaded: false,
                     winchisel_power_plan_enabled: false,
                     winchisel_power_plan_loaded: false,
                 },
@@ -1181,9 +1189,95 @@ impl WinchiselApp {
             powershell7_telemetry_loaded: true,
             hpet_preferred_enabled: Self::hpet_preferred_enabled(),
             hpet_preferred_loaded: true,
+            modern_standby_disabled_enabled: Self::modern_standby_disabled_enabled(),
+            modern_standby_disabled_loaded: true,
+            sync_provider_disabled_enabled: Self::sync_provider_disabled_enabled(),
+            sync_provider_disabled_loaded: true,
             winchisel_power_plan_enabled: Self::winchisel_power_plan_active(),
             winchisel_power_plan_loaded: true,
         }
+    }
+
+    #[cfg(windows)]
+    fn sync_provider_disabled_enabled() -> bool {
+        use winreg::enums::*;
+        let hkcu = winreg::RegKey::predef(HKEY_CURRENT_USER);
+        hkcu.open_subkey_with_flags(
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
+            KEY_READ,
+        )
+        .and_then(|key| key.get_value::<u32, _>("ShowSyncProviderNotifications"))
+        .map(|v| v == 0)
+        .unwrap_or(false)
+    }
+
+    #[cfg(not(windows))]
+    fn sync_provider_disabled_enabled() -> bool {
+        false
+    }
+
+    #[cfg(windows)]
+    fn apply_sync_provider_disabled(enabled: bool) -> Result<(), String> {
+        use winreg::enums::*;
+        let hkcu = winreg::RegKey::predef(HKEY_CURRENT_USER);
+        let key = hkcu
+            .open_subkey_with_flags(
+                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
+                KEY_WRITE,
+            )
+            .map_err(|e| format!("Failed to open Explorer Advanced key: {}", e))?;
+        if enabled {
+            key.set_value("ShowSyncProviderNotifications", &0u32)
+                .map_err(|e| format!("Failed to set ShowSyncProviderNotifications: {}", e))?;
+        } else {
+            key.set_value("ShowSyncProviderNotifications", &1u32)
+                .map_err(|e| format!("Failed to set ShowSyncProviderNotifications: {}", e))?;
+        }
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    fn apply_sync_provider_disabled(_enabled: bool) -> Result<(), String> {
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn modern_standby_disabled_enabled() -> bool {
+        use winreg::enums::*;
+        let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        hklm.open_subkey_with_flags(
+            r"SYSTEM\CurrentControlSet\Control\Power",
+            KEY_READ,
+        )
+        .and_then(|key| key.get_value::<u32, _>("PlatformAoAcOverride"))
+        .map(|v| v == 0)
+        .unwrap_or(false)
+    }
+
+    #[cfg(not(windows))]
+    fn modern_standby_disabled_enabled() -> bool {
+        false
+    }
+
+    #[cfg(windows)]
+    fn apply_modern_standby_disabled(enabled: bool) -> Result<(), String> {
+        use winreg::enums::*;
+        let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let key = hklm
+            .open_subkey_with_flags(r"SYSTEM\CurrentControlSet\Control\Power", KEY_WRITE)
+            .map_err(|e| format!("Failed to open Power key: {}", e))?;
+        if enabled {
+            key.set_value("PlatformAoAcOverride", &0u32)
+                .map_err(|e| format!("Failed to set PlatformAoAcOverride: {}", e))?;
+        } else {
+            let _ = key.delete_value("PlatformAoAcOverride");
+        }
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    fn apply_modern_standby_disabled(_enabled: bool) -> Result<(), String> {
+        Ok(())
     }
 
     fn winchisel_power_plan_active() -> bool {

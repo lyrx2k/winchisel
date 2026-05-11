@@ -463,6 +463,14 @@ pub fn t(key: &str) -> &'static str {
         "extras_hpet_desc" => {
             "HPET deaktivieren für bessere Leistung in manchen Anti-Cheats und Spielen."
         }
+        "extras_modern_standby_label" => "Modern Standby deaktivieren",
+        "extras_modern_standby_desc" => {
+            "S0 Modern Standby deaktivieren, um Akkuverbrauch und Wärme im Schlafmodus zu vermeiden."
+        }
+        "extras_sync_provider_label" => "Sync-Provider Benachrichtigungen deaktivieren",
+        "extras_sync_provider_desc" => {
+            "Sync-Provider Benachrichtigungen im Windows Explorer deaktivieren."
+        }
         "extras_power_plan_label" => "Winchisel Energiesparplan",
         "extras_power_plan_desc" => {
             "Importiert und aktiviert den optimierten Winchisel Energiesparplan."

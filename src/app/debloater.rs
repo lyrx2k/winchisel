@@ -489,7 +489,12 @@ impl WinchiselApp {
                                                 egui::Layout::top_down(egui::Align::Min),
                                                 |ui| {
                                                     ui.set_width(text_width);
-                                                    ui.label(&item.name).on_hover_text(
+                                                    ui.label(
+                                                        egui::RichText::new(&item.name)
+                                                            .color(egui::Color32::from_rgb(232, 232, 232))
+                                                            .size(13.0),
+                                                    )
+                                                    .on_hover_text(
                                                         meta.replacen("{}", &item.package_name, 1)
                                                             .replacen(
                                                                 "{}",
@@ -501,7 +506,11 @@ impl WinchiselApp {
                                                             .replacen("{}", &item.group, 1),
                                                     );
                                                     ui.add_space(2.0);
-                                                    ui.label(&item.description);
+                                                    ui.label(
+                                                        egui::RichText::new(&item.description)
+                                                            .color(egui::Color32::from_rgb(190, 190, 190))
+                                                            .size(11.0),
+                                                    );
                                                 },
                                             );
 

@@ -140,13 +140,22 @@ impl WinchiselApp {
                             } else {
                                 item.winget_ids.join(", ")
                             };
-                            ui.label(&item.name).on_hover_text(
+                            ui.label(
+                                egui::RichText::new(&item.name)
+                                    .color(egui::Color32::from_rgb(232, 232, 232))
+                                    .size(13.0),
+                            )
+                            .on_hover_text(
                                 meta.replacen("{}", &winget_ids, 1)
                                     .replacen("{}", &category_label, 1)
                                     .replacen("{}", &item.website_url, 1),
                             );
                             ui.add_space(2.0);
-                            ui.label(&item.description);
+                            ui.label(
+                                egui::RichText::new(&item.description)
+                                    .color(egui::Color32::from_rgb(190, 190, 190))
+                                    .size(11.0),
+                            );
                         },
                     );
 
