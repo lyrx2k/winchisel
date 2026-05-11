@@ -463,6 +463,13 @@ pub fn t(key: &str) -> &'static str {
         "extras_hpet_desc" => {
             "HPET deaktivieren für bessere Leistung in manchen Anti-Cheats und Spielen."
         }
+        "extras_power_plan_label" => "Winchisel Energiesparplan",
+        "extras_power_plan_desc" => {
+            "Importiert und aktiviert den optimierten Winchisel Energiesparplan."
+        }
+        "extras_power_plan_active" => "Aktiv",
+        "extras_power_plan_apply" => "Anwenden",
+        "extras_power_plan_applied" => "Winchisel Energiesparplan erfolgreich angewendet.",
         "extras_brave_on_applied" => "Brave Debloat aktiviert.",
         "extras_brave_off_applied" => "Brave Debloat deaktiviert.",
         "check_updates" => "Updates prüfen",

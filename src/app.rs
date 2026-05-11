@@ -139,6 +139,8 @@ struct ExtrasState {
     powershell7_telemetry_loaded: bool,
     hpet_preferred_enabled: bool,
     hpet_preferred_loaded: bool,
+    winchisel_power_plan_enabled: bool,
+    winchisel_power_plan_loaded: bool,
 }
 
 struct DownloadsLoadResult {
@@ -324,9 +326,9 @@ pub struct WinchiselApp {
     settings_action_dialog: Option<SettingsActionDialog>,
     extras_teredo_worker: Option<ExtrasBoolWorker>,
     extras_hpet_worker: Option<ExtrasBoolWorker>,
+    extras_power_plan_worker: Option<ExtrasBoolWorker>,
     extras_load_worker: Option<ExtrasLoadWorker>,
     toasts: Toasts,
-    show_log_window: bool,
     update_check_rx: Option<Receiver<UpdateCheckResult>>,
     pending_update_dialog: Option<UpdateDialog>,
     update_dialog_on_complete: bool,
@@ -461,6 +463,8 @@ impl WinchiselApp {
                     powershell7_telemetry_loaded: false,
                     hpet_preferred_enabled: false,
                     hpet_preferred_loaded: false,
+                    winchisel_power_plan_enabled: false,
+                    winchisel_power_plan_loaded: false,
                 },
                 home_last_refresh: None,
             },
@@ -486,9 +490,9 @@ impl WinchiselApp {
             settings_action_dialog: None,
             extras_teredo_worker: None,
             extras_hpet_worker: None,
+            extras_power_plan_worker: None,
             extras_load_worker: None,
             toasts: Toasts::default().with_anchor(egui_notify::Anchor::BottomRight),
-            show_log_window: false,
             update_check_rx: None,
             pending_update_dialog: None,
             update_dialog_on_complete: false,
@@ -789,7 +793,6 @@ foreach ($p in $paths) {
 impl eframe::App for WinchiselApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.init_style(ui.ctx());
-        ui.ctx().plugin_or_default::<egui_async::EguiAsyncPlugin>();
         let mut repaint_after: Option<Duration> = None;
         self.poll_latency_worker();
         self.ensure_debloater_selection();
@@ -1144,7 +1147,6 @@ impl eframe::App for WinchiselApp {
         self.show_system_repair_dialog(ui.ctx());
         self.show_settings_action_dialog(ui.ctx());
         self.show_toast_layer(ui);
-        self.show_log_window(ui.ctx());
 
         self.sync_settings();
     }
@@ -1179,7 +1181,73 @@ impl WinchiselApp {
             powershell7_telemetry_loaded: true,
             hpet_preferred_enabled: Self::hpet_preferred_enabled(),
             hpet_preferred_loaded: true,
+            winchisel_power_plan_enabled: Self::winchisel_power_plan_active(),
+            winchisel_power_plan_loaded: true,
         }
+    }
+
+    fn winchisel_power_plan_active() -> bool {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        match std::process::Command::new("powercfg")
+            .args(["/list"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                stdout
+                    .lines()
+                    .any(|line| line.contains("(Winchisel)") && line.contains('*'))
+            }
+            Err(_) => false,
+        }
+    }
+
+    fn apply_winchisel_power_plan() -> Result<(), String> {
+        const POWER_PLAN_BYTES: &[u8] = include_bytes!("assets/Winchisel.pow");
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let temp_path = std::env::temp_dir().join("Winchisel.pow");
+        std::fs::write(&temp_path, POWER_PLAN_BYTES)
+            .map_err(|e| format!("Failed to write power plan temp file: {}", e))?;
+
+        let import_output = std::process::Command::new("powercfg")
+            .args(["/import", temp_path.to_str().unwrap()])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| format!("powercfg /import failed: {}", e))?;
+
+        if !import_output.status.success() {
+            return Err(format!(
+                "powercfg /import failed: {}",
+                String::from_utf8_lossy(&import_output.stderr)
+            ));
+        }
+
+        let stdout = String::from_utf8_lossy(&import_output.stdout);
+        let guid = stdout
+            .lines()
+            .find(|l| l.contains("GUID"))
+            .and_then(|l| l.split(':').nth(1))
+            .map(|s| s.trim())
+            .ok_or("Failed to parse power plan GUID from import output")?;
+
+        let activate_output = std::process::Command::new("powercfg")
+            .args(["/setactive", guid])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| format!("powercfg /setactive failed: {}", e))?;
+
+        if !activate_output.status.success() {
+            return Err(format!(
+                "powercfg /setactive failed: {}",
+                String::from_utf8_lossy(&activate_output.stderr)
+            ));
+        }
+
+        let _ = std::fs::remove_file(&temp_path);
+
+        Ok(())
     }
 
     #[cfg(windows)]

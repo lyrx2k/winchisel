@@ -12,6 +12,7 @@ enum ExtrasKind {
     Teredo,
     Ps7,
     Hpet,
+    ModernStandby,
 }
 
 impl WinchiselApp {
@@ -63,6 +64,30 @@ impl WinchiselApp {
                         }
                     }
                 }
+                if let Some(worker) = self.extras_power_plan_worker.as_ref() {
+                    match worker.rx.try_recv() {
+                        Ok(result) => {
+                            self.extras_power_plan_worker = None;
+                            if let Err(err) = result {
+                                self.toasts
+                                    .error(err)
+                                    .duration(std::time::Duration::from_secs_f64(3.5));
+                            } else {
+                                self.toasts
+                                    .success(self.tr("extras_power_plan_applied"))
+                                    .duration(std::time::Duration::from_secs_f64(3.5));
+                                self.state.extras.winchisel_power_plan_enabled =
+                                    Self::winchisel_power_plan_active();
+                                self.state.extras.winchisel_power_plan_loaded = true;
+                            }
+                        }
+                        Err(mpsc::TryRecvError::Empty) => {}
+                        Err(mpsc::TryRecvError::Disconnected) => {
+                            self.extras_power_plan_worker = None;
+                            self.state.extras.winchisel_power_plan_loaded = true;
+                        }
+                    }
+                }
                 if !self.state.extras.brave_debloat_loaded
                     || !self.state.extras.edge_debloat_loaded
                     || !self.state.extras.widgets_removed_loaded
@@ -72,6 +97,8 @@ impl WinchiselApp {
                     || !self.state.extras.teredo_disabled_loaded
                     || !self.state.extras.powershell7_telemetry_loaded
                     || !self.state.extras.hpet_preferred_loaded
+                    || !self.state.extras.modern_standby_disabled_loaded
+                    || !self.state.extras.winchisel_power_plan_loaded
                 {
                     ui.add_space(40.0);
                     ui.vertical_centered(|ui| {
@@ -82,6 +109,10 @@ impl WinchiselApp {
                     return;
                 }
 
+                self.extras_power_plan_section(ui);
+                ui.add_space(8.0);
+                self.extras_policy_row(ui, ExtrasKind::ModernStandby);
+                ui.add_space(8.0);
                 self.extras_policy_row(ui, ExtrasKind::Brave);
                 ui.add_space(8.0);
                 self.extras_policy_row(ui, ExtrasKind::Edge);
@@ -152,6 +183,12 @@ impl WinchiselApp {
                 self.tr("extras_hpet_desc"),
                 self.hpet_tooltip(),
                 self.state.extras.hpet_preferred_enabled,
+            ),
+            ExtrasKind::ModernStandby => (
+                self.tr("extras_modern_standby_label"),
+                self.tr("extras_modern_standby_desc"),
+                self.modern_standby_tooltip(),
+                self.state.extras.modern_standby_disabled_enabled,
             ),
         };
         let pending = matches!(kind, ExtrasKind::Teredo) && self.extras_teredo_worker.is_some()
@@ -236,6 +273,9 @@ impl WinchiselApp {
                                             let _ = tx.send(Self::apply_hpet_preferred(desired));
                                         });
                                         return;
+                                    }
+                                    ExtrasKind::ModernStandby => {
+                                        Self::apply_modern_standby_disabled(local_enabled)
                                     }
                                 };
                                 if let Err(err) = result {
@@ -492,5 +532,82 @@ impl WinchiselApp {
             "HPET off can help some AMD CPUs and FACEIT anti-cheat.",
         ]
         .join("\n")
+    }
+
+    fn extras_power_plan_section(&mut self, ui: &mut egui::Ui) {
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgb(20, 20, 23))
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(35, 35, 39)))
+            .corner_radius(10.0)
+            .inner_margin(egui::Margin::symmetric(10, 8))
+            .show(ui, |ui| {
+                let available = ui.available_width();
+                let action_width = 118.0;
+                let text_width = (available - action_width - 12.0).max(220.0);
+                ui.horizontal(|ui| {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(text_width, 34.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.vertical(|ui| {
+                                ui.set_width(text_width);
+                                ui.label(self.tr("extras_power_plan_label"));
+                                ui.add_space(2.0);
+                                ui.label(self.tr("extras_power_plan_desc"));
+                            });
+                        },
+                    );
+
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(action_width, 34.0),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            ui.set_width(action_width);
+                            let active = self.state.extras.winchisel_power_plan_enabled;
+                            let pending = self.extras_power_plan_worker.is_some();
+
+                            if pending {
+                                ui.add(egui::Spinner::new().size(18.0));
+                                return;
+                            }
+
+                            let (btn_fill, btn_stroke) = if active {
+                                (
+                                    egui::Color32::from_rgb(34, 139, 34),
+                                    egui::Color32::from_rgb(50, 205, 50),
+                                )
+                            } else {
+                                (
+                                    egui::Color32::from_rgb(35, 54, 80),
+                                    egui::Color32::from_rgb(10, 210, 254),
+                                )
+                            };
+
+                            if ui
+                                .add_sized(
+                                    [118.0, 34.0],
+                                    egui::Button::new(if active {
+                                        self.tr("extras_power_plan_active")
+                                    } else {
+                                        self.tr("extras_power_plan_apply")
+                                    })
+                                    .fill(btn_fill)
+                                    .stroke(egui::Stroke::new(1.0, btn_stroke)),
+                                )
+                                .clicked()
+                                && !active
+                            {
+                                self.state.extras.winchisel_power_plan_loaded = false;
+                                let (tx, rx) = mpsc::channel();
+                                self.extras_power_plan_worker =
+                                    Some(super::ExtrasBoolWorker { rx });
+                                std::thread::spawn(move || {
+                                    let _ = tx.send(Self::apply_winchisel_power_plan());
+                                });
+                            }
+                        },
+                    );
+                });
+            });
     }
 }

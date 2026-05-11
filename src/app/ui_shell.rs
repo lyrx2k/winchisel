@@ -147,18 +147,6 @@ impl WinchiselApp {
         self.toasts.show(ui.ctx());
     }
 
-    pub(crate) fn show_log_window(&mut self, ctx: &egui::Context) {
-        if !self.show_log_window {
-            return;
-        }
-        egui::Window::new(self.tr("open_logs"))
-            .open(&mut self.show_log_window)
-            .default_size([860.0, 520.0])
-            .show(ctx, |ui| {
-                egui_logger::logger_ui().show(ui);
-            });
-    }
-
     pub(crate) fn install_icon_fonts(ctx: &egui::Context) {
         let mut definitions = FontDefinitions::default();
         let fallback_fonts: Vec<String> = definitions.font_data.keys().cloned().collect();

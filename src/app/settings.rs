@@ -35,15 +35,7 @@ impl WinchiselApp {
                             });
                             ui.label(self.tr("settings_saved_auto"));
                         });
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                            if ui
-                                .add_sized([116.0, 34.0], egui::Button::new(self.tr("open_logs")))
-                                .clicked()
-                            {
-                                self.show_log_window = true;
-                            }
                         });
-                    });
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
                         ui.label(Self::icon_text(

@@ -82,7 +82,6 @@ fn main() {
         return;
     }
 
-    let _ = egui_logger::builder().init();
     let settings = load_app_settings();
     let show_console = settings.show_console;
     set_console_visibility(show_console);
