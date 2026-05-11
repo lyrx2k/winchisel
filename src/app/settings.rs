@@ -466,7 +466,7 @@ fn run_powershell_logged(cmd: &str, tx: mpsc::Sender<SettingsActionEvent>) -> bo
     if let Some(stdout) = child.stdout.take() {
         let tx_out = tx.clone();
         handles.push(std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines().flatten() {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
                     let _ = tx_out.send(SettingsActionEvent::Log(trimmed.to_string()));
@@ -477,7 +477,7 @@ fn run_powershell_logged(cmd: &str, tx: mpsc::Sender<SettingsActionEvent>) -> bo
     if let Some(stderr) = child.stderr.take() {
         let tx_err = tx.clone();
         handles.push(std::thread::spawn(move || {
-            for line in BufReader::new(stderr).lines().flatten() {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
                     let _ = tx_err.send(SettingsActionEvent::Log(trimmed.to_string()));

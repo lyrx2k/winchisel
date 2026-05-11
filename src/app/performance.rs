@@ -1,8 +1,17 @@
 use super::WinchiselApp;
 use crate::{GamingTweakRow, i18n, performance};
 use eframe::egui;
-use iconflow::{Pack, Size, Style, try_icon};
+// iconflow nicht mehr direkt benötigt (Icons werden über IconCache gecacht)
 use std::sync::mpsc::Receiver;
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum PerformanceRowAction {
+    ToggleExpand(i32),
+    ToggleState(i32, bool),
+    SelectOption(i32, i32),
+    ApplyDefault(i32),
+    ApplyRecommended(i32),
+}
 
 #[derive(Clone)]
 pub(crate) struct PerformanceState {
@@ -21,17 +30,15 @@ pub(crate) struct PerformanceLoadWorker {
 }
 
 impl WinchiselApp {
-    pub(crate) fn performance_tick(app: &mut WinchiselApp, ui: &mut egui::Ui) {
+    pub(crate) fn performance_tick(app: &mut WinchiselApp, _ui: &mut egui::Ui) {
         if app.state.active_tab == super::Tab::Performance
             && !app.state.performance.performance_loaded
             && app.performance_load_worker.is_none()
         {
             app.start_performance_load();
         }
-        if app.performance_load_worker.is_some() {
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(50));
-        }
+        // Repaint wird bereits im Haupt-Loop (app.rs) gehandhabt,
+        // wenn performance_load_worker.is_some()
     }
 
     pub(crate) fn performance_sidebar_loading(app: &WinchiselApp) -> bool {
@@ -123,7 +130,7 @@ impl WinchiselApp {
         }
     }
 
-    pub(crate) fn render_performance_row(&mut self, ui: &mut egui::Ui, row: &GamingTweakRow) {
+    pub(crate) fn render_performance_row(&self, ui: &mut egui::Ui, row: &GamingTweakRow) -> Option<PerformanceRowAction> {
         let editable = row.is_editable;
         let row_color = if editable {
             egui::Color32::from_rgb(23, 23, 25)
@@ -141,6 +148,7 @@ impl WinchiselApp {
             egui::Color32::from_rgb(115, 115, 115)
         };
 
+        let mut action: Option<PerformanceRowAction> = None;
         egui::Frame::new()
             .fill(row_color)
             .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(36, 36, 40)))
@@ -210,8 +218,7 @@ impl WinchiselApp {
                                     visuals.text_color(),
                                 );
                                 if editable && response.clicked() {
-                                    performance::toggle_gaming_expand_state(row.tweak_id);
-                                    self.refresh_performance_groups();
+                                    action = Some(PerformanceRowAction::ToggleExpand(row.tweak_id));
                                 }
                                 ui.add_space(6.0);
                             }
@@ -224,8 +231,7 @@ impl WinchiselApp {
                                     })
                                     .inner;
                                 if resp.changed() {
-                                    performance::toggle_gaming_tweak_state(row.tweak_id, enabled);
-                                    self.refresh_performance_groups();
+                                    action = Some(PerformanceRowAction::ToggleState(row.tweak_id, enabled));
                                 }
                             } else {
                                 let mut selected_index = row.selected_index.max(0) as usize;
@@ -243,23 +249,15 @@ impl WinchiselApp {
                                         }
                                     });
                                 if selected_index != row.selected_index.max(0) as usize {
-                                    performance::select_gaming_tweak_option_state(
-                                        row.tweak_id,
-                                        selected_index as i32,
-                                    );
-                                    self.refresh_performance_groups();
+                                    action = Some(PerformanceRowAction::SelectOption(row.tweak_id, selected_index as i32));
                                 }
                             }
 
                             ui.add_space(6.0);
-                            let default_icon = if let Ok(icon) =
-                                try_icon(Pack::Lucide, "warehouse", Style::Regular, Size::Regular)
-                            {
-                                let glyph = char::from_u32(icon.codepoint).unwrap_or('?');
-                                glyph.to_string()
-                            } else {
-                                String::new()
-                            };
+                            let default_icon = self
+                                .icon_cache
+                                .warehouse
+                                .map_or_else(String::new, |c| c.to_string());
                             if ui
                                 .add_enabled(
                                     editable,
@@ -278,18 +276,13 @@ impl WinchiselApp {
                                 ))
                                 .clicked()
                             {
-                                performance::apply_gaming_tweak_default_state(row.tweak_id);
-                                self.refresh_performance_groups();
+                                action = Some(PerformanceRowAction::ApplyDefault(row.tweak_id));
                             }
                             ui.add_space(6.0);
-                            let rec_icon = if let Ok(icon) =
-                                try_icon(Pack::Lucide, "star", Style::Regular, Size::Regular)
-                            {
-                                let glyph = char::from_u32(icon.codepoint).unwrap_or('?');
-                                glyph.to_string()
-                            } else {
-                                String::new()
-                            };
+                            let rec_icon = self
+                                .icon_cache
+                                .star
+                                .map_or_else(String::new, |c| c.to_string());
                             if ui
                                 .add_enabled(
                                     editable,
@@ -308,13 +301,13 @@ impl WinchiselApp {
                                 ))
                                 .clicked()
                             {
-                                performance::apply_gaming_tweak_recommended_state(row.tweak_id);
-                                self.refresh_performance_groups();
+                                action = Some(PerformanceRowAction::ApplyRecommended(row.tweak_id));
                             }
                         },
                     );
                 });
             });
+        action
     }
 
     pub(crate) fn render_performance_tab(&mut self, ui: &mut egui::Ui) {
@@ -401,10 +394,11 @@ impl WinchiselApp {
                 ui.separator();
                 ui.add_space(10.0);
 
-                let groups = self.state.performance.performance_groups.clone();
+                let groups = &self.state.performance.performance_groups;
                 if groups.iter().all(|g| g.is_empty()) {
                     ui.label(perf_empty);
                 } else {
+                    let mut actions: Vec<PerformanceRowAction> = Vec::new();
                     egui::ScrollArea::vertical()
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
@@ -426,7 +420,9 @@ impl WinchiselApp {
                                 .show(ui, |ui| {
                                     ui.add_space(8.0);
                                     for row in rules.iter() {
-                                        self.render_performance_row(ui, row);
+                                        if let Some(action) = self.render_performance_row(ui, row) {
+                                            actions.push(action);
+                                        }
                                         if group_idx == 6 && !row.warning_text.is_empty() {
                                             ui.add_space(6.0);
                                             Self::card_frame()
@@ -459,6 +455,34 @@ impl WinchiselApp {
                                 );
                             }
                         });
+                    let mut needs_refresh = false;
+                    for action in actions {
+                        match action {
+                            PerformanceRowAction::ToggleExpand(id) => {
+                                performance::toggle_gaming_expand_state(id);
+                                needs_refresh = true;
+                            }
+                            PerformanceRowAction::ToggleState(id, enabled) => {
+                                performance::toggle_gaming_tweak_state(id, enabled);
+                                needs_refresh = true;
+                            }
+                            PerformanceRowAction::SelectOption(id, idx) => {
+                                performance::select_gaming_tweak_option_state(id, idx);
+                                needs_refresh = true;
+                            }
+                            PerformanceRowAction::ApplyDefault(id) => {
+                                performance::apply_gaming_tweak_default_state(id);
+                                needs_refresh = true;
+                            }
+                            PerformanceRowAction::ApplyRecommended(id) => {
+                                performance::apply_gaming_tweak_recommended_state(id);
+                                needs_refresh = true;
+                            }
+                        }
+                    }
+                    if needs_refresh {
+                        self.refresh_performance_groups();
+                    }
                 }
             }
         });

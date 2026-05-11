@@ -8,7 +8,7 @@ edition = "2024"
 build = "src/build.rs"
 
 [profile.release]
-opt-level = "z" # "z" optimiert aggressiv auf eine kleine Dateigröße. Alternativ "s" (Standard-Größenoptimierung). #opt-level = 3
+opt-level = 3
 lto = true
 codegen-units = 1
 strip = true

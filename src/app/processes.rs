@@ -293,6 +293,15 @@ impl WinchiselApp {
         }
     }
 
+    fn clear_stale_cpu_tree_expanded(all_rows: &[CpuProcessRow]) {
+        let valid_pids: HashSet<i32> = all_rows.iter().map(|r| r.pid).collect();
+        if let Ok(mut opt) = CPU_TREE_EXPANDED.lock()
+            && let Some(set) = opt.as_mut()
+        {
+            set.retain(|pid| valid_pids.contains(pid));
+        }
+    }
+
     pub(crate) fn open_affinity_editor(&mut self, pid: i32, name: String) {
         if let Ok((process_mask, system_mask)) =
             cpu_read_process_affinity_masks(pid, self.state.settings.language)
@@ -544,6 +553,7 @@ impl WinchiselApp {
                 self.state.cpu.cpu_last_error = None;
                 self.retain_cpu_selection();
                 self.cpu_load_worker = None;
+                Self::clear_stale_cpu_tree_expanded(&self.state.cpu.cpu_processes_all);
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
@@ -892,49 +902,49 @@ impl WinchiselApp {
     }
 
     pub(crate) fn render_processes_tab(&mut self, ui: &mut egui::Ui) {
-        let title = self.tr("processes_title").to_string();
-        let subtitle = self.tr("processes_subtitle").to_string();
-        let refresh = self.tr("processes_refresh").to_string();
-        let all = self.tr("processes_all").to_string();
-        let active_only_text = self.tr("processes_active_only").to_string();
-        let user_only_text = self.tr("processes_user_only").to_string();
-        let refreshing = self.tr("processes_refreshing").to_string();
-        let waiting = self.tr("processes_waiting_first").to_string();
-        let reload_queued = self.tr("processes_reload_queued").to_string();
-        let pid = self.tr("processes_pid").to_string();
-        let name = self.tr("processes_name").to_string();
-        let cpu = self.tr("processes_cpu").to_string();
-        let priority = self.tr("processes_priority").to_string();
-        let affinity = self.tr("processes_affinity").to_string();
-        let status = self.tr("processes_status").to_string();
-        let collapse = self.tr("processes_expand_tree").to_string();
-        let expand = self.tr("processes_collapse_tree").to_string();
-        let cpu_priority = self.tr("processes_cpu_priority").to_string();
-        let current = self.tr("processes_current").to_string();
-        let always = self.tr("processes_always").to_string();
-        let low = self.tr("processes_priority_low").to_string();
-        let idle = self.tr("processes_priority_idle").to_string();
-        let below_normal = self.tr("processes_priority_below_normal").to_string();
-        let normal = self.tr("processes_priority_normal").to_string();
-        let above_normal = self.tr("processes_priority_above_normal").to_string();
-        let high = self.tr("processes_priority_high").to_string();
-        let realtime = self.tr("processes_priority_realtime").to_string();
-        let background = self.tr("processes_priority_background").to_string();
-        let always_below = self.tr("processes_priority_always_below").to_string();
-        let always_above = self.tr("processes_priority_always_above").to_string();
-        let io_priority = self.tr("processes_io_priority").to_string();
-        let affinity_menu = self.tr("processes_affinity_menu").to_string();
-        let open_editor = self.tr("processes_open_editor").to_string();
-        let all_cores = self.tr("processes_all_cores").to_string();
-        let selected_process = self.tr("processes_selected").to_string();
-        let realtime_title = self.tr("processes_realtime_title").to_string();
-        let realtime_warn = self.tr("processes_realtime_warn").to_string();
-        let cancel = self.tr("processes_cancel").to_string();
-        let confirm = self.tr("processes_confirm").to_string();
-        let invert = self.tr("processes_invert").to_string();
-        let clear = self.tr("processes_clear").to_string();
-        let close = self.tr("processes_close").to_string();
-        let apply = self.tr("processes_apply").to_string();
+        let title = self.tr("processes_title");
+        let subtitle = self.tr("processes_subtitle");
+        let refresh = self.tr("processes_refresh");
+        let all = self.tr("processes_all");
+        let active_only_text = self.tr("processes_active_only");
+        let user_only_text = self.tr("processes_user_only");
+        let refreshing = self.tr("processes_refreshing");
+        let waiting = self.tr("processes_waiting_first");
+        let reload_queued = self.tr("processes_reload_queued");
+        let pid = self.tr("processes_pid");
+        let name = self.tr("processes_name");
+        let cpu = self.tr("processes_cpu");
+        let priority = self.tr("processes_priority");
+        let affinity = self.tr("processes_affinity");
+        let status = self.tr("processes_status");
+        let collapse = self.tr("processes_expand_tree");
+        let expand = self.tr("processes_collapse_tree");
+        let cpu_priority = self.tr("processes_cpu_priority");
+        let current = self.tr("processes_current");
+        let always = self.tr("processes_always");
+        let low = self.tr("processes_priority_low");
+        let idle = self.tr("processes_priority_idle");
+        let below_normal = self.tr("processes_priority_below_normal");
+        let normal = self.tr("processes_priority_normal");
+        let above_normal = self.tr("processes_priority_above_normal");
+        let high = self.tr("processes_priority_high");
+        let realtime = self.tr("processes_priority_realtime");
+        let background = self.tr("processes_priority_background");
+        let always_below = self.tr("processes_priority_always_below");
+        let always_above = self.tr("processes_priority_always_above");
+        let io_priority = self.tr("processes_io_priority");
+        let affinity_menu = self.tr("processes_affinity_menu");
+        let open_editor = self.tr("processes_open_editor");
+        let all_cores = self.tr("processes_all_cores");
+        let selected_process = self.tr("processes_selected");
+        let realtime_title = self.tr("processes_realtime_title");
+        let realtime_warn = self.tr("processes_realtime_warn");
+        let cancel = self.tr("processes_cancel");
+        let confirm = self.tr("processes_confirm");
+        let invert = self.tr("processes_invert");
+        let clear = self.tr("processes_clear");
+        let close = self.tr("processes_close");
+        let apply = self.tr("processes_apply");
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
@@ -964,21 +974,21 @@ impl WinchiselApp {
                 let mut filter_mode = self.cpu_filter_mode();
                 egui::ComboBox::from_id_salt("process_filter_mode")
                     .selected_text(match filter_mode {
-                        CpuFilterMode::All => all.clone(),
-                        CpuFilterMode::ActiveOnly => active_only_text.clone(),
-                        CpuFilterMode::UserOnly => user_only_text.clone(),
+                        CpuFilterMode::All => all,
+                        CpuFilterMode::ActiveOnly => active_only_text,
+                        CpuFilterMode::UserOnly => user_only_text,
                     })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut filter_mode, CpuFilterMode::All, all.clone());
+                        ui.selectable_value(&mut filter_mode, CpuFilterMode::All, all);
                         ui.selectable_value(
                             &mut filter_mode,
                             CpuFilterMode::ActiveOnly,
-                            active_only_text.clone(),
+                            active_only_text,
                         );
                         ui.selectable_value(
                             &mut filter_mode,
                             CpuFilterMode::UserOnly,
-                            user_only_text.clone(),
+                            user_only_text,
                         );
                     });
                 let filter_mode_value = match filter_mode {
@@ -1053,12 +1063,12 @@ impl WinchiselApp {
                         self.rebuild_cpu_visible_rows();
                     }
                 };
-                header.col(|ui| header_button(ui, &pid, CpuSortColumn::Pid));
-                header.col(|ui| header_button(ui, &name, CpuSortColumn::Name));
-                header.col(|ui| header_button(ui, &cpu, CpuSortColumn::Cpu));
-                header.col(|ui| header_button(ui, &priority, CpuSortColumn::Priority));
-                header.col(|ui| header_button(ui, &affinity, CpuSortColumn::Affinity));
-                header.col(|ui| header_button(ui, &status, CpuSortColumn::Status));
+                header.col(|ui| header_button(ui, pid, CpuSortColumn::Pid));
+                header.col(|ui| header_button(ui, name, CpuSortColumn::Name));
+                header.col(|ui| header_button(ui, cpu, CpuSortColumn::Cpu));
+                header.col(|ui| header_button(ui, priority, CpuSortColumn::Priority));
+                header.col(|ui| header_button(ui, affinity, CpuSortColumn::Affinity));
+                header.col(|ui| header_button(ui, status, CpuSortColumn::Status));
             })
             .body(|body| {
                 body.rows(26.0, self.state.cpu.cpu_processes.len(), |mut row| {
@@ -1072,9 +1082,9 @@ impl WinchiselApp {
                         if proc_row.has_children
                             && ui
                                 .button(if proc_row.expanded {
-                                    collapse.clone()
+                                    collapse
                                 } else {
-                                    expand.clone()
+                                    expand
                                 })
                                 .clicked()
                         {
@@ -1085,15 +1095,15 @@ impl WinchiselApp {
                         if proc_row.has_children {
                             ui.separator();
                         }
-                        ui.menu_button(cpu_priority.clone(), |ui| {
-                            ui.menu_button(current.clone(), |ui| {
+                        ui.menu_button(cpu_priority, |ui| {
+                            ui.menu_button(current, |ui| {
                                 for (level, label) in [
-                                    (4, high.as_str()),
-                                    (3, above_normal.as_str()),
-                                    (2, normal.as_str()),
-                                    (1, below_normal.as_str()),
-                                    (6, background.as_str()),
-                                    (0, idle.as_str()),
+                                    (4, high),
+                                    (3, above_normal),
+                                    (2, normal),
+                                    (1, below_normal),
+                                    (6, background),
+                                    (0, idle),
                                 ] {
                                     if ui.button(label).clicked() {
                                         *pending_action.borrow_mut() =
@@ -1102,14 +1112,14 @@ impl WinchiselApp {
                                     }
                                 }
                             });
-                            ui.menu_button(always.clone(), |ui| {
+                            ui.menu_button(always, |ui| {
                                 for (value, label) in [
-                                    (1, idle.as_str()),
-                                    (5, always_below.as_str()),
-                                    (2, normal.as_str()),
-                                    (6, always_above.as_str()),
-                                    (3, high.as_str()),
-                                    (4, realtime.as_str()),
+                                    (1, idle),
+                                    (5, always_below),
+                                    (2, normal),
+                                    (6, always_above),
+                                    (3, high),
+                                    (4, realtime),
                                 ] {
                                     if ui.button(label).clicked() {
                                         *pending_action.borrow_mut() = Some(
@@ -1120,21 +1130,21 @@ impl WinchiselApp {
                                 }
                             });
                         });
-                        ui.menu_button(io_priority.clone(), |ui| {
-                            ui.menu_button(current.clone(), |ui| {
-                                if ui.button(low.as_str()).clicked() {
+                        ui.menu_button(io_priority, |ui| {
+                            ui.menu_button(current, |ui| {
+                                if ui.button(low).clicked() {
                                     *pending_action.borrow_mut() =
                                         Some(CpuAction::SetIoCurrent(proc_row.pid, 0));
                                     ui.close();
                                 }
-                                if ui.button(normal.as_str()).clicked() {
+                                if ui.button(normal).clicked() {
                                     *pending_action.borrow_mut() =
                                         Some(CpuAction::SetIoCurrent(proc_row.pid, 1));
                                     ui.close();
                                 }
                             });
-                            ui.menu_button(always.clone(), |ui| {
-                                for (idx, label) in [(0, low.as_str()), (1, normal.as_str())] {
+                            ui.menu_button(always, |ui| {
+                                for (idx, label) in [(0, low), (1, normal)] {
                                     if ui.button(label).clicked() {
                                         *pending_action.borrow_mut() = Some(
                                             CpuAction::SetIoAlways(proc_row.name.clone(), idx),
@@ -1144,16 +1154,16 @@ impl WinchiselApp {
                                 }
                             });
                         });
-                        ui.menu_button(affinity_menu.clone(), |ui| {
-                            ui.menu_button(current.clone(), |ui| {
-                                if ui.button(open_editor.clone()).clicked() {
+                        ui.menu_button(affinity_menu, |ui| {
+                            ui.menu_button(current, |ui| {
+                                if ui.button(open_editor).clicked() {
                                     *pending_action.borrow_mut() = Some(CpuAction::OpenAffinity(
                                         proc_row.pid,
                                         proc_row.name.clone(),
                                     ));
                                     ui.close();
                                 }
-                                if ui.button(all_cores.clone()).clicked() {
+                                if ui.button(all_cores).clicked() {
                                     *pending_action.borrow_mut() =
                                         Some(CpuAction::SetAffinityCurrent(proc_row.pid, 0));
                                     ui.close();
@@ -1272,12 +1282,12 @@ impl WinchiselApp {
                     ui.label(realtime_warn);
                     ui.add_space(12.0);
                     ui.horizontal(|ui| {
-                        if ui.button(cancel.clone()).clicked() {
+                        if ui.button(cancel).clicked() {
                             self.state.cpu.cpu_realtime_confirm_visible = false;
                             self.state.cpu.cpu_realtime_pending_pid = -1;
                             self.state.cpu.cpu_realtime_pending_name.clear();
                         }
-                        if ui.button(confirm.clone()).clicked() {
+                        if ui.button(confirm).clicked() {
                             let pid = self.state.cpu.cpu_realtime_pending_pid;
                             if pid > 0 {
                                 let _ = cpu_set_process_priority_class(
@@ -1328,7 +1338,8 @@ impl WinchiselApp {
                                 .spacing([16.0, 8.0])
                                 .show(ui, |ui| {
                                     let last_col = grid_cols.saturating_sub(1) as i32;
-                                    for core in self.state.cpu.cpu_affinity_cores.clone() {
+                                    let cores = self.state.cpu.cpu_affinity_cores.clone();
+                                    for core in &cores {
                                         let mut checked = core.checked;
                                         let resp = ui.add_enabled(
                                             core.enabled,
@@ -1345,17 +1356,17 @@ impl WinchiselApp {
                         });
                     ui.add_space(12.0);
                     ui.horizontal(|ui| {
-                        if ui.button(invert.clone()).clicked() {
+                        if ui.button(invert).clicked() {
                             self.invert_cpu_affinity_selection();
                         }
-                        if ui.button(clear.clone()).clicked() {
+                        if ui.button(clear).clicked() {
                             self.clear_cpu_affinity_selection();
                         }
                         ui.separator();
-                        if ui.button(close.clone()).clicked() {
+                        if ui.button(close).clicked() {
                             self.state.cpu.cpu_affinity_dialog_visible = false;
                         }
-                        if ui.button(apply.clone()).clicked() {
+                        if ui.button(apply).clicked() {
                             self.apply_cpu_affinity_selection();
                         }
                     });

@@ -2691,11 +2691,7 @@ fn catalog(lang: Language) -> &'static [CatalogItem] {
                 category: r.group,
                 name: r.name.to_string(),
                 name_lc: r.name.to_ascii_lowercase(),
-                desc_lc: format!(
-                    "{} {}",
-                    t(lang, r.id).to_ascii_lowercase(),
-                    t(lang, r.id).to_ascii_lowercase()
-                ),
+                desc_lc: t(lang, r.id).to_ascii_lowercase(),
                 input_type: if r.input == 1 { 1 } else { 0 },
                 options: if r.options.is_empty() {
                     vec!["Off".to_string(), "On".to_string()]
@@ -2969,13 +2965,16 @@ fn warning_for(key: &str, selected: i32, show_sysmain_warning: bool) -> String {
     }
 }
 
-fn has_hdd_disk() -> bool {
-    use sysinfo::{DiskKind, Disks};
+static HAS_HDD_DISK: OnceLock<bool> = OnceLock::new();
 
-    Disks::new_with_refreshed_list()
-        .list()
-        .iter()
-        .any(|disk| matches!(disk.kind(), DiskKind::HDD))
+fn has_hdd_disk() -> bool {
+    *HAS_HDD_DISK.get_or_init(|| {
+        use sysinfo::{DiskKind, Disks};
+        Disks::new_with_refreshed_list()
+            .list()
+            .iter()
+            .any(|disk| matches!(disk.kind(), DiskKind::HDD))
+    })
 }
 
 fn apply_dependency_editability(

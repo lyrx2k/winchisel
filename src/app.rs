@@ -128,7 +128,6 @@ struct ExtrasState {
     ctfmon_blocked_enabled: bool,
     ctfmon_blocked_loaded: bool,
     ctfmon_service_dll_enabled: bool,
-    ctfmon_service_dll_loaded: bool,
     ctfmon_service_dll_open: bool,
     timer_resolution_enabled: bool,
     timer_resolution_loaded: bool,
@@ -183,6 +182,10 @@ struct SettingsActionLoadWorker {
 
 struct ExtrasBoolWorker {
     rx: Receiver<Result<(), String>>,
+}
+
+struct ExtrasLoadWorker {
+    rx: Receiver<ExtrasState>,
 }
 
 #[derive(Clone)]
@@ -258,10 +261,50 @@ enum UpdateDialog {
     Error { message: String },
 }
 
+struct IconCache {
+    warehouse: Option<char>,
+    star: Option<char>,
+    shield_check: Option<char>,
+    badge_info: Option<char>,
+    refresh_cw: Option<char>,
+    heart: Option<char>,
+    bug: Option<char>,
+}
+
+impl Default for IconCache {
+    fn default() -> Self {
+        use iconflow::{Pack, Size, Style, try_icon};
+        Self {
+            warehouse: try_icon(Pack::Lucide, "warehouse", Style::Regular, Size::Regular)
+                .ok()
+                .and_then(|i| char::from_u32(i.codepoint)),
+            star: try_icon(Pack::Lucide, "star", Style::Regular, Size::Regular)
+                .ok()
+                .and_then(|i| char::from_u32(i.codepoint)),
+            shield_check: try_icon(Pack::Lucide, "shield-check", Style::Regular, Size::Regular)
+                .ok()
+                .and_then(|i| char::from_u32(i.codepoint)),
+            badge_info: try_icon(Pack::Lucide, "badge-info", Style::Regular, Size::Regular)
+                .ok()
+                .and_then(|i| char::from_u32(i.codepoint)),
+            refresh_cw: try_icon(Pack::Lucide, "refresh-cw", Style::Regular, Size::Regular)
+                .ok()
+                .and_then(|i| char::from_u32(i.codepoint)),
+            heart: try_icon(Pack::Lucide, "heart", Style::Regular, Size::Regular)
+                .ok()
+                .and_then(|i| char::from_u32(i.codepoint)),
+            bug: try_icon(Pack::Lucide, "bug", Style::Regular, Size::Regular)
+                .ok()
+                .and_then(|i| char::from_u32(i.codepoint)),
+        }
+    }
+}
+
 pub struct WinchiselApp {
     state: AppState,
     system: sysinfo::System,
     initialized_style: bool,
+    icon_cache: IconCache,
     debloater_load_worker: Option<debloater::DebloaterLoadWorker>,
     debloater_cache_ready: bool,
     pending_debloater_action: Option<debloater::DebloaterAction>,
@@ -281,6 +324,7 @@ pub struct WinchiselApp {
     settings_action_dialog: Option<SettingsActionDialog>,
     extras_teredo_worker: Option<ExtrasBoolWorker>,
     extras_hpet_worker: Option<ExtrasBoolWorker>,
+    extras_load_worker: Option<ExtrasLoadWorker>,
     toasts: Toasts,
     show_log_window: bool,
     update_check_rx: Option<Receiver<UpdateCheckResult>>,
@@ -406,7 +450,6 @@ impl WinchiselApp {
                     ctfmon_blocked_enabled: false,
                     ctfmon_blocked_loaded: false,
                     ctfmon_service_dll_enabled: false,
-                    ctfmon_service_dll_loaded: false,
                     ctfmon_service_dll_open: true,
                     timer_resolution_enabled: false,
                     timer_resolution_loaded: false,
@@ -421,6 +464,8 @@ impl WinchiselApp {
                 },
                 home_last_refresh: None,
             },
+            system,
+            icon_cache: IconCache::default(),
             initialized_style: false,
             debloater_load_worker,
             debloater_cache_ready: false,
@@ -441,7 +486,7 @@ impl WinchiselApp {
             settings_action_dialog: None,
             extras_teredo_worker: None,
             extras_hpet_worker: None,
-            system: sysinfo::System::new_all(),
+            extras_load_worker: None,
             toasts: Toasts::default().with_anchor(egui_notify::Anchor::BottomRight),
             show_log_window: false,
             update_check_rx: None,
@@ -758,8 +803,31 @@ impl eframe::App for WinchiselApp {
         self.poll_system_repair();
         self.poll_settings_actions();
         self.poll_update_check();
-        if self.state.active_tab == Tab::Extras && !self.state.extras.brave_debloat_loaded {
-            self.sync_extras_state();
+        if self.state.active_tab == Tab::Extras
+            && !self.state.extras.brave_debloat_loaded
+            && self.extras_load_worker.is_none()
+        {
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(Self::load_extras_state());
+            });
+            self.extras_load_worker = Some(ExtrasLoadWorker { rx });
+        }
+        if let Some(worker) = self.extras_load_worker.as_ref() {
+            match worker.rx.try_recv() {
+                Ok(state) => {
+                    let old_open = self.state.extras.ctfmon_service_dll_open;
+                    self.state.extras = state;
+                    self.state.extras.ctfmon_service_dll_open = old_open;
+                    self.extras_load_worker = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    Self::bump_repaint_after(&mut repaint_after, Duration::from_millis(50));
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.extras_load_worker = None;
+                }
+            }
         }
         if self.state.settings.check_updates_on_startup
             && !self.state.update_check_started
@@ -838,10 +906,7 @@ impl eframe::App for WinchiselApp {
                 ui.vertical(|ui| {
                     ui.heading(format!("Winchisel v{}", env!("CARGO_PKG_VERSION")));
                     ui.horizontal(|ui| {
-                        if let Ok(icon) =
-                            try_icon(Pack::Lucide, "shield-check", Style::Regular, Size::Regular)
-                        {
-                            let glyph = char::from_u32(icon.codepoint).unwrap_or('?');
+                        if let Some(glyph) = self.icon_cache.shield_check {
                             ui.label(
                                 egui::RichText::new(glyph.to_string())
                                     .color(egui::Color32::from_rgb(96, 181, 103)),
@@ -854,10 +919,7 @@ impl eframe::App for WinchiselApp {
                         };
                         ui.colored_label(egui::Color32::from_rgb(96, 181, 103), admin);
                         ui.separator();
-                        if let Ok(icon) =
-                            try_icon(Pack::Lucide, "badge-info", Style::Regular, Size::Regular)
-                        {
-                            let glyph = char::from_u32(icon.codepoint).unwrap_or('?');
+                        if let Some(glyph) = self.icon_cache.badge_info {
                             ui.label(
                                 egui::RichText::new(glyph.to_string())
                                     .color(egui::Color32::from_rgb(166, 166, 166)),
@@ -879,10 +941,7 @@ impl eframe::App for WinchiselApp {
                     });
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let update_button_text = if let Ok(icon) =
-                        try_icon(Pack::Lucide, "refresh-cw", Style::Regular, Size::Regular)
-                    {
-                        let glyph = char::from_u32(icon.codepoint).unwrap_or('?');
+                    let update_button_text = if let Some(glyph) = self.icon_cache.refresh_cw {
                         format!("{glyph}  {}", self.tr("check_updates"))
                     } else {
                         self.tr("check_updates").to_string()
@@ -901,10 +960,7 @@ impl eframe::App for WinchiselApp {
                     {
                         self.start_update_check(true);
                     }
-                    let donate_button_text = if let Ok(icon) =
-                        try_icon(Pack::Lucide, "heart", Style::Regular, Size::Regular)
-                    {
-                        let glyph = char::from_u32(icon.codepoint).unwrap_or('?');
+                    let donate_button_text = if let Some(glyph) = self.icon_cache.heart {
                         format!("{glyph}  {}", self.tr("donate"))
                     } else {
                         self.tr("donate").to_string()
@@ -923,10 +979,7 @@ impl eframe::App for WinchiselApp {
                     {
                         crate::open_url("https://ko-fi.com/tekkubot");
                     }
-                    let bug_report_text = if let Ok(icon) =
-                        try_icon(Pack::Lucide, "bug", Style::Regular, Size::Regular)
-                    {
-                        let glyph = char::from_u32(icon.codepoint).unwrap_or('?');
+                    let bug_report_text = if let Some(glyph) = self.icon_cache.bug {
                         format!("{glyph}  {}", self.tr("bug_report"))
                     } else {
                         self.tr("bug_report").to_string()
@@ -1104,27 +1157,29 @@ impl WinchiselApp {
         *slot = Some(slot.map_or(next, |cur| cur.min(next)));
     }
 
-    fn sync_extras_state(&mut self) {
-        self.state.extras.brave_debloat_enabled = Self::brave_debloat_enabled();
-        self.state.extras.brave_debloat_loaded = true;
-        self.state.extras.edge_debloat_enabled = Self::edge_debloat_enabled();
-        self.state.extras.edge_debloat_loaded = true;
-        self.state.extras.widgets_removed_enabled = Self::widgets_removed_enabled();
-        self.state.extras.widgets_removed_loaded = true;
-        self.state.extras.ctfmon_blocked_enabled = Self::ctfmon_blocked_enabled();
-        self.state.extras.ctfmon_blocked_loaded = true;
-        self.state.extras.ctfmon_service_dll_enabled = Self::ctfmon_service_dll_enabled();
-        self.state.extras.ctfmon_service_dll_loaded = true;
-        self.state.extras.timer_resolution_enabled = Self::timer_resolution_enabled();
-        self.state.extras.timer_resolution_loaded = true;
-        self.state.extras.ipv6_preferred_enabled = Self::ipv6_preferred_enabled();
-        self.state.extras.ipv6_preferred_loaded = true;
-        self.state.extras.teredo_disabled_enabled = Self::teredo_disabled_enabled();
-        self.state.extras.teredo_disabled_loaded = true;
-        self.state.extras.powershell7_telemetry_enabled = Self::powershell7_telemetry_enabled();
-        self.state.extras.powershell7_telemetry_loaded = true;
-        self.state.extras.hpet_preferred_enabled = Self::hpet_preferred_enabled();
-        self.state.extras.hpet_preferred_loaded = true;
+    fn load_extras_state() -> ExtrasState {
+        ExtrasState {
+            brave_debloat_enabled: Self::brave_debloat_enabled(),
+            brave_debloat_loaded: true,
+            edge_debloat_enabled: Self::edge_debloat_enabled(),
+            edge_debloat_loaded: true,
+            widgets_removed_enabled: Self::widgets_removed_enabled(),
+            widgets_removed_loaded: true,
+            ctfmon_blocked_enabled: Self::ctfmon_blocked_enabled(),
+            ctfmon_blocked_loaded: true,
+            ctfmon_service_dll_enabled: Self::ctfmon_service_dll_enabled(),
+            ctfmon_service_dll_open: true,
+            timer_resolution_enabled: Self::timer_resolution_enabled(),
+            timer_resolution_loaded: true,
+            ipv6_preferred_enabled: Self::ipv6_preferred_enabled(),
+            ipv6_preferred_loaded: true,
+            teredo_disabled_enabled: Self::teredo_disabled_enabled(),
+            teredo_disabled_loaded: true,
+            powershell7_telemetry_enabled: Self::powershell7_telemetry_enabled(),
+            powershell7_telemetry_loaded: true,
+            hpet_preferred_enabled: Self::hpet_preferred_enabled(),
+            hpet_preferred_loaded: true,
+        }
     }
 
     #[cfg(windows)]
@@ -1360,9 +1415,7 @@ impl WinchiselApp {
             dword(&edge, "WalletDonationEnabled", 0)?;
             dword(&edge, "DefaultBrowserSettingsCampaignEnabled", 0)?;
         } else {
-            for name in ["CreateDesktopShortcutDefault"] {
-                remove(&edge_update, name)?;
-            }
+            remove(&edge_update, "CreateDesktopShortcutDefault")?;
             for name in [
                 "PersonalizationReportingEnabled",
                 "ShowRecommendationsEnabled",

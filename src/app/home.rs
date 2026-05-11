@@ -165,6 +165,7 @@ impl WinchiselApp {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn hardware_card(
         &self,
         ui: &mut egui::Ui,
@@ -262,6 +263,7 @@ impl WinchiselApp {
             });
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn system_card(
         &self,
         ui: &mut egui::Ui,

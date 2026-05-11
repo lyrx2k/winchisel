@@ -266,10 +266,8 @@ impl WinchiselApp {
     }
 
     pub(crate) fn render_debloater_tab(&mut self, ui: &mut egui::Ui) {
-        if self.state.debloater.debloater_loading || self.debloater_load_worker.is_some() {
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(50));
-        }
+        // Repaint wird bereits im Haupt-Loop (app.rs) gehandhabt,
+        // wenn debloater_load_worker.is_some()
         let title = self.tr("debloater_title").to_string();
         let subtitle = self.tr("debloater_subtitle").to_string();
         let refresh = self.tr("debloater_refresh").to_string();

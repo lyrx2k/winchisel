@@ -1,7 +1,7 @@
 use super::WinchiselApp;
 use crate::{GamingTweakRow, app_definitions::current_language, i18n::t};
 use eframe::egui;
-use iconflow::{Pack, Size, Style, try_icon};
+// iconflow nicht mehr direkt benötigt (Icons werden über IconCache gecacht)
 use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
 use std::sync::{LazyLock, Mutex};
@@ -65,17 +65,15 @@ struct PrivacyRowMeta {
 }
 
 impl WinchiselApp {
-    pub(crate) fn privacy_tick(app: &mut WinchiselApp, ui: &mut egui::Ui) {
+    pub(crate) fn privacy_tick(app: &mut WinchiselApp, _ui: &mut egui::Ui) {
         if app.state.active_tab == super::Tab::SecurityPrivacy
             && !app.state.privacy_security.loaded
             && app.privacy_load_worker.is_none()
         {
             app.start_privacy_security_load();
         }
-        if app.privacy_load_worker.is_some() {
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(50));
-        }
+        // Repaint wird bereits im Haupt-Loop (app.rs) gehandhabt,
+        // wenn privacy_load_worker.is_some()
     }
 
     pub(crate) fn privacy_sidebar_loading(app: &WinchiselApp) -> bool {
@@ -1929,6 +1927,8 @@ impl WinchiselApp {
             }
 
             let lang = self.state.settings.language;
+            let warehouse_icon = self.icon_cache.warehouse;
+            let star_icon = self.icon_cache.star;
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
@@ -1975,6 +1975,8 @@ impl WinchiselApp {
                                     parent_row,
                                     &privacy_current_default,
                                     &privacy_current_recommended,
+                                    warehouse_icon,
+                                    star_icon,
                                 );
                                 ui.add_space(8.0);
                                 if parent_row.is_expanded {
@@ -1986,6 +1988,8 @@ impl WinchiselApp {
                                             row,
                                             &privacy_current_default,
                                             &privacy_current_recommended,
+                                            warehouse_icon,
+                                            star_icon,
                                         );
                                         ui.add_space(8.0);
                                     }
@@ -2001,6 +2005,8 @@ impl WinchiselApp {
                                         row,
                                         &privacy_current_default,
                                         &privacy_current_recommended,
+                                        warehouse_icon,
+                                        star_icon,
                                     );
                                     ui.add_space(8.0);
                                 }
@@ -2086,6 +2092,8 @@ impl WinchiselApp {
         row: &mut GamingTweakRow,
         current_default_prefix: &str,
         current_recommended_prefix: &str,
+        warehouse_icon: Option<char>,
+        star_icon: Option<char>,
     ) {
         let editable = row.is_editable;
         let row_color = if editable {
@@ -2208,14 +2216,8 @@ impl WinchiselApp {
                                 }
                             }
                             ui.add_space(6.0);
-                            let default_icon = if let Ok(icon) =
-                                try_icon(Pack::Lucide, "warehouse", Style::Regular, Size::Regular)
-                            {
-                                let glyph = char::from_u32(icon.codepoint).unwrap_or('?');
-                                glyph.to_string()
-                            } else {
-                                String::new()
-                            };
+                            let default_icon = warehouse_icon
+                                .map_or_else(String::new, |c| c.to_string());
                             if ui
                                 .add_enabled(
                                     editable,
@@ -2246,14 +2248,8 @@ impl WinchiselApp {
                                 }
                             }
                             ui.add_space(6.0);
-                            let rec_icon = if let Ok(icon) =
-                                try_icon(Pack::Lucide, "star", Style::Regular, Size::Regular)
-                            {
-                                let glyph = char::from_u32(icon.codepoint).unwrap_or('?');
-                                glyph.to_string()
-                            } else {
-                                String::new()
-                            };
+                            let rec_icon = star_icon
+                                .map_or_else(String::new, |c| c.to_string());
                             if ui
                                 .add_enabled(
                                     editable,

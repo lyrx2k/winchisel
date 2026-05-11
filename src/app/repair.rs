@@ -214,7 +214,7 @@ fn run_shell_command(cmd: &str, tx: mpsc::Sender<RepairEvent>) -> bool {
     if let Some(stdout) = child.stdout.take() {
         let log_tx_out = log_tx.clone();
         handles.push(std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines().flatten() {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
                     let _ = log_tx_out.send(trimmed.to_string());
@@ -225,7 +225,7 @@ fn run_shell_command(cmd: &str, tx: mpsc::Sender<RepairEvent>) -> bool {
     if let Some(stderr) = child.stderr.take() {
         let log_tx_err = log_tx.clone();
         handles.push(std::thread::spawn(move || {
-            for line in BufReader::new(stderr).lines().flatten() {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
                     let _ = log_tx_err.send(trimmed.to_string());
