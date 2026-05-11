@@ -78,11 +78,20 @@ pub(crate) struct HomeState {
     cpu_brand: String,
     cpu_cores: String,
     gpu_name: String,
+    gpu_vram: String,
+    gpu_driver_version: String,
+    motherboard: String,
+    windows_build: String,
     memory_total: String,
     memory_used: String,
+    memory_total_gb: f64,
+    memory_used_gb: f64,
     storage_total: String,
     storage_used: String,
+    storage_total_gb: f64,
+    storage_used_gb: f64,
     cpu_usage: String,
+    cpu_usage_percent: f32,
     uptime: String,
 }
 
@@ -248,6 +257,7 @@ enum UpdateDialog {
 
 pub struct WinchiselApp {
     state: AppState,
+    system: sysinfo::System,
     initialized_style: bool,
     debloater_load_worker: Option<debloater::DebloaterLoadWorker>,
     debloater_cache_ready: bool,
@@ -292,6 +302,7 @@ impl WinchiselApp {
     }
 
     pub fn new(settings: AppSettings, is_admin: bool) -> Self {
+        let mut system = sysinfo::System::new_all();
         let debloater_items = get_all_apps(settings.language);
         let (debloater_load_worker, debloater_loading) =
             Self::spawn_debloater_worker(debloater_items.clone());
@@ -348,7 +359,7 @@ impl WinchiselApp {
                     groups: Default::default(),
                     loaded: privacy_loaded,
                 },
-                home: Self::build_home_state(settings.language),
+                home: Self::build_home_state(&mut system, settings.language),
                 cpu: processes_tab::CpuState {
                     cpu_filter_mode: 1,
                     cpu_visible_count: 0,
@@ -427,6 +438,7 @@ impl WinchiselApp {
             settings_action_dialog: None,
             extras_teredo_worker: None,
             extras_hpet_worker: None,
+            system: sysinfo::System::new_all(),
             toasts: Toasts::default().with_anchor(egui_notify::Anchor::BottomRight),
             show_log_window: false,
             update_check_rx: None,
@@ -784,7 +796,8 @@ impl eframe::App for WinchiselApp {
                 .map(|last| last.elapsed() >= Duration::from_secs(5))
                 .unwrap_or(true);
             if refresh_due {
-                self.state.home = Self::build_home_state(self.state.settings.language);
+                let lang = self.state.settings.language;
+                self.state.home = Self::build_home_state(&mut self.system, lang);
                 self.state.home_last_refresh = Some(Instant::now());
                 Self::bump_repaint_after(&mut repaint_after, Duration::from_millis(100));
             } else if let Some(last) = self.state.home_last_refresh {

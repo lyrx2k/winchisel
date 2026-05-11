@@ -1271,6 +1271,9 @@ pub fn t(key: &str) -> &'static str {
         "OfficeActionsServer" => "Office-Aktionsserver",
         "latency_progress_verify" => "Topologie und Energiehinweise werden überprüft...",
         "latency_progress_report" => "Bericht wird erstellt...",
+        "home_section_hardware" => "Hardware",
+        "home_section_system" => "System",
+        "home_motherboard" => "Mainboard",
         "CompatibilityAppraiserTask" => {
             "Sammelt Kompatibilitäts-Telemetriedaten von Programmen für Windows-Upgrades. Arbeitet mit dem Dienst 'Connected User Experiences and Telemetry' zusammen. Deaktiviere dies, um Telemetrie und Hintergrundaktivität zu reduzieren"
         }

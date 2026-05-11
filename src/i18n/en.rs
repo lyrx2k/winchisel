@@ -1300,6 +1300,9 @@ pub fn t(key: &str) -> &'static str {
         "latency_progress_hubs" => "Tracing devices to root hubs...",
         "latency_progress_verify" => "Verifying topology and power hints...",
         "latency_progress_report" => "Building report...",
+        "home_section_hardware" => "Hardware",
+        "home_section_system" => "System",
+        "home_motherboard" => "Motherboard",
         _ => "",
     }
 }

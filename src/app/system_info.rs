@@ -1,56 +1,35 @@
 use super::{HomeState, WinchiselApp};
 use crate::{Language, i18n};
-struct HomeStaticSnapshot {
-    computer_name: String,
-    os_version: String,
-    kernel_version: String,
-    bios_version: String,
-    bios_date: String,
-    cpu_brand: String,
-    cpu_cores: String,
-    gpu_name: String,
-}
 
 impl WinchiselApp {
-    pub(crate) fn build_home_state(lang: Language) -> HomeState {
+    pub(crate) fn build_home_state(system: &mut sysinfo::System, lang: Language) -> HomeState {
         use sysinfo::System;
-        let mut system = System::new();
         system.refresh_memory();
         system.refresh_cpu_usage();
-        let snapshot = {
-            let cpu_brand = system
-                .cpus()
-                .first()
-                .map(|cpu| cpu.brand().to_string())
-                .unwrap_or_else(|| i18n::t(lang, "home_unknown_cpu").to_string());
-            let cpu_cores = System::physical_core_count()
-                .or_else(|| Some(system.cpus().len()))
-                .unwrap_or(0);
-            let (gpu_name, _, _) = Self::read_gpu_info(lang);
-            let (_system_model, _system_manufacturer, bios_version, bios_date) =
-                Self::read_system_info(lang);
-            HomeStaticSnapshot {
-                computer_name: System::host_name()
-                    .unwrap_or_else(|| i18n::t(lang, "home_unknown_pc").to_string()),
-                os_version: System::os_version()
-                    .unwrap_or_else(|| i18n::t(lang, "home_unknown_os").to_string()),
-                kernel_version: System::kernel_version()
-                    .unwrap_or_else(|| i18n::t(lang, "home_unknown_kernel").to_string()),
-                bios_version,
-                bios_date,
-                cpu_brand,
-                cpu_cores: i18n::t(lang, "home_cores_suffix").replacen(
-                    "{}",
-                    &cpu_cores.to_string(),
-                    1,
-                ),
-                gpu_name: if gpu_name.is_empty() {
-                    i18n::t(lang, "home_unknown_gpu").to_string()
-                } else {
-                    gpu_name
-                },
-            }
+
+        let cpu_brand = system
+            .cpus()
+            .first()
+            .map(|cpu| cpu.brand().to_string())
+            .unwrap_or_else(|| i18n::t(lang, "home_unknown_cpu").to_string());
+        let cpu_cores = System::physical_core_count()
+            .or_else(|| Some(system.cpus().len()))
+            .unwrap_or(0);
+        let (gpu_name, _, gpu_vram) = Self::read_gpu_info(lang);
+        let gpu_driver_version = Self::read_gpu_driver_version(&gpu_name);
+        let (system_model, system_manufacturer, bios_version, bios_date) =
+            Self::read_system_info(lang);
+        let windows_build = Self::read_windows_build(lang);
+        let motherboard = if system_manufacturer.is_empty() && system_model.is_empty() {
+            i18n::t(lang, "home_unknown_model").to_string()
+        } else if system_manufacturer.is_empty() {
+            system_model
+        } else if system_model.is_empty() {
+            system_manufacturer
+        } else {
+            format!("{} {}", system_manufacturer, system_model)
         };
+
         let total_memory_gb = system.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
         let used_memory_gb = system.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
         let mut total_disk_gb = 0.0f64;
@@ -64,18 +43,34 @@ impl WinchiselApp {
             total_disk_gb += total;
             used_disk_gb += used;
         }
-        let cpu_usage = format!("{:.0}%", system.global_cpu_usage());
+        let cpu_usage_percent = system.global_cpu_usage();
+        let cpu_usage = format!("{:.0}%", cpu_usage_percent);
         let uptime_secs = System::uptime();
 
         HomeState {
-            computer_name: snapshot.computer_name,
-            os_version: snapshot.os_version,
-            kernel_version: snapshot.kernel_version,
-            bios_version: snapshot.bios_version,
-            bios_date: snapshot.bios_date,
-            cpu_brand: snapshot.cpu_brand,
-            cpu_cores: snapshot.cpu_cores,
-            gpu_name: snapshot.gpu_name,
+            computer_name: System::host_name()
+                .unwrap_or_else(|| i18n::t(lang, "home_unknown_pc").to_string()),
+            os_version: System::os_version()
+                .unwrap_or_else(|| i18n::t(lang, "home_unknown_os").to_string()),
+            kernel_version: System::kernel_version()
+                .unwrap_or_else(|| i18n::t(lang, "home_unknown_kernel").to_string()),
+            windows_build,
+            bios_version,
+            bios_date,
+            cpu_brand,
+            cpu_cores: i18n::t(lang, "home_cores_suffix").replacen(
+                "{}",
+                &cpu_cores.to_string(),
+                1,
+            ),
+            gpu_name: if gpu_name.is_empty() {
+                i18n::t(lang, "home_unknown_gpu").to_string()
+            } else {
+                gpu_name
+            },
+            gpu_vram,
+            gpu_driver_version,
+            motherboard,
             memory_total: i18n::t(lang, "home_gb_total").replacen(
                 "{:.1}",
                 &format!("{total_memory_gb:.1}"),
@@ -86,6 +81,8 @@ impl WinchiselApp {
                 &format!("{used_memory_gb:.1}"),
                 1,
             ),
+            memory_total_gb: total_memory_gb,
+            memory_used_gb: used_memory_gb,
             storage_total: i18n::t(lang, "home_tb_total").replacen(
                 "{:.2}",
                 &format!("{total_disk_gb:.2}"),
@@ -96,7 +93,10 @@ impl WinchiselApp {
                 &format!("{used_disk_gb:.2}"),
                 1,
             ),
+            storage_total_gb: total_disk_gb,
+            storage_used_gb: used_disk_gb,
             cpu_usage,
+            cpu_usage_percent,
             uptime: format!(
                 "{}d {:02}h {:02}m",
                 uptime_secs / 86_400,
@@ -182,5 +182,63 @@ impl WinchiselApp {
             .and_then(|k| k.get_value::<String, _>("BIOSReleaseDate").ok())
             .unwrap_or_else(|| i18n::t(lang, "home_unknown_date").to_string());
         (model, manufacturer, bios_version, bios_date)
+    }
+
+    fn read_windows_build(_lang: Language) -> String {
+        let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+        hklm.open_subkey("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion")
+            .ok()
+            .and_then(|k| k.get_value::<String, _>("CurrentBuildNumber").ok())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "Unknown".to_string())
+    }
+
+    fn read_gpu_driver_version(gpu_name: &str) -> String {
+        use winreg::enums::*;
+        let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+        let Ok(class_key) = hklm.open_subkey_with_flags(
+            r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}",
+            KEY_READ,
+        ) else {
+            return String::new();
+        };
+        let gpu_name_norm = gpu_name.to_lowercase();
+        let mut fallback = String::new();
+        for sub_name in class_key.enum_keys().flatten() {
+            if !sub_name.chars().all(|c| c.is_ascii_digit()) {
+                continue;
+            }
+            let Ok(sub_key) = class_key.open_subkey_with_flags(&sub_name, KEY_READ) else {
+                continue;
+            };
+            let Ok(driver_desc) = sub_key.get_value::<String, _>("DriverDesc") else {
+                continue;
+            };
+            let driver_version: String = sub_key
+                .get_value::<String, _>("DriverVersion")
+                .unwrap_or_default();
+            let driver_date: String = sub_key
+                .get_value::<String, _>("DriverDate")
+                .unwrap_or_default();
+            if driver_version.is_empty() {
+                continue;
+            }
+            let info = if driver_date.is_empty() {
+                driver_version.clone()
+            } else {
+                format!("{} — {}", driver_version, driver_date)
+            };
+            if fallback.is_empty() {
+                fallback = info.clone();
+            }
+            let desc_norm = driver_desc.to_lowercase();
+            if desc_norm == gpu_name_norm
+                || desc_norm.contains(&gpu_name_norm)
+                || gpu_name_norm.contains(&desc_norm)
+            {
+                return info;
+            }
+        }
+        fallback
     }
 }
