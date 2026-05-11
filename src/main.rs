@@ -13,7 +13,7 @@ use eframe::icon_data::from_png_bytes;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-
+#[cfg(target_os = "windows")]
 #[derive(Clone, Default)]
 pub struct GamingTweakRow {
     pub tweak_id: i32,
@@ -72,6 +72,11 @@ pub fn save_app_settings(settings: &AppSettings) {
 }
 
 fn main() {
+    if !is_windows_11_or_newer() {
+        show_unsupported_windows_message();
+        return;
+    }
+
     if !is_admin() {
         restart_as_admin();
         return;
@@ -158,6 +163,56 @@ fn is_admin() -> bool {
     use windows::Win32::UI::Shell::IsUserAnAdmin;
     unsafe { IsUserAnAdmin().as_bool() }
 }
+
+#[cfg(target_os = "windows")]
+fn is_windows_11_or_newer() -> bool {
+    use winreg::enums::*;
+
+    let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
+    let Ok(key) = hklm.open_subkey_with_flags(
+        r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+        KEY_READ,
+    ) else {
+        return false;
+    };
+
+    let build = key
+        .get_value::<String, _>("CurrentBuildNumber")
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok());
+
+    build.is_some_and(|build| build >= 26100)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_windows_11_or_newer() -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn show_unsupported_windows_message() {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+
+    let title: Vec<u16> = "Winchisel".encode_utf16().chain(std::iter::once(0)).collect();
+    let text: Vec<u16> =
+        "Winchisel requires Windows 11 24H2 or newer. Older Windows versions are not supported."
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        let _ = MessageBoxW(
+            None,
+            PCWSTR(text.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn show_unsupported_windows_message() {}
 
 #[cfg(target_os = "windows")]
 pub(crate) fn open_url(url: &str) {

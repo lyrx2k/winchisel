@@ -18,6 +18,8 @@ use std::time::{Duration, Instant};
 
 mod debloater;
 mod downloads;
+#[path = "app/extras.rs"]
+mod extras;
 mod home;
 #[path = "app/latency.rs"]
 mod latency_tab;
@@ -27,12 +29,10 @@ mod performance_tab;
 mod privacy_security;
 #[path = "app/processes.rs"]
 mod processes_tab;
-#[path = "app/restore_point.rs"]
-mod restore_point;
 #[path = "app/repair.rs"]
 mod repair;
-#[path = "app/extras.rs"]
-mod extras;
+#[path = "app/restore_point.rs"]
+mod restore_point;
 mod settings;
 #[path = "app/system_info.rs"]
 mod system_info;
@@ -181,8 +181,15 @@ enum RepairDialog {
 
 #[derive(Clone)]
 enum SettingsActionDialog {
-    Progress { title: String, stage: String, log: Vec<String> },
-    Result { title: String, message: String },
+    Progress {
+        title: String,
+        stage: String,
+        log: Vec<String>,
+    },
+    Result {
+        title: String,
+        message: String,
+    },
 }
 
 enum RepairEvent {
@@ -1108,7 +1115,9 @@ impl WinchiselApp {
     fn brave_debloat_enabled() -> bool {
         use winreg::enums::*;
         let root = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
-        let Ok(key) = root.open_subkey_with_flags(r"SOFTWARE\Policies\BraveSoftware\Brave", KEY_READ) else {
+        let Ok(key) =
+            root.open_subkey_with_flags(r"SOFTWARE\Policies\BraveSoftware\Brave", KEY_READ)
+        else {
             return false;
         };
         let read_dword = |name: &str| -> Option<u32> { key.get_value(name).ok() };
@@ -1177,7 +1186,8 @@ impl WinchiselApp {
     fn edge_debloat_enabled() -> bool {
         use winreg::enums::*;
         let root = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
-        let Ok(edge) = root.open_subkey_with_flags(r"SOFTWARE\Policies\Microsoft\Edge", KEY_READ) else {
+        let Ok(edge) = root.open_subkey_with_flags(r"SOFTWARE\Policies\Microsoft\Edge", KEY_READ)
+        else {
             return false;
         };
         let Ok(edge_update) =
@@ -1191,13 +1201,14 @@ impl WinchiselApp {
         ) else {
             return false;
         };
-        let read_dword = |key: &winreg::RegKey, name: &str| -> Option<u32> { key.get_value(name).ok() };
-        let read_string = |key: &winreg::RegKey, name: &str| -> Option<String> { key.get_value(name).ok() };
+        let read_dword =
+            |key: &winreg::RegKey, name: &str| -> Option<u32> { key.get_value(name).ok() };
+        let read_string =
+            |key: &winreg::RegKey, name: &str| -> Option<String> { key.get_value(name).ok() };
 
         read_dword(&edge_update, "CreateDesktopShortcutDefault") == Some(0)
             && read_dword(&edge, "PersonalizationReportingEnabled") == Some(0)
-            && read_string(&blocklist, "1").as_deref()
-                == Some("ofefcgjbeghpigppfmkologfjadafddi")
+            && read_string(&blocklist, "1").as_deref() == Some("ofefcgjbeghpigppfmkologfjadafddi")
             && read_dword(&edge, "ShowRecommendationsEnabled") == Some(0)
             && read_dword(&edge, "HideFirstRunExperience") == Some(1)
             && read_dword(&edge, "UserFeedbackAllowed") == Some(0)
@@ -1333,9 +1344,7 @@ impl WinchiselApp {
             dword(&edge, "WalletDonationEnabled", 0)?;
             dword(&edge, "DefaultBrowserSettingsCampaignEnabled", 0)?;
         } else {
-            for name in [
-                "CreateDesktopShortcutDefault",
-            ] {
+            for name in ["CreateDesktopShortcutDefault"] {
                 remove(&edge_update, name)?;
             }
             for name in [
@@ -1364,9 +1373,9 @@ impl WinchiselApp {
 
     #[cfg(windows)]
     fn apply_widgets_removed(enabled: bool) -> Result<(), String> {
-        use std::process::{Command, Stdio};
         #[cfg(windows)]
         use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
         let script = if enabled {
@@ -1439,7 +1448,9 @@ Invoke-WinUtilExplorerUpdate -action "restart"
         use winreg::enums::*;
         let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
         let (key, _) = hklm
-            .create_subkey(r"SYSTEM\CurrentControlSet\Services\TextInputManagementService\Parameters")
+            .create_subkey(
+                r"SYSTEM\CurrentControlSet\Services\TextInputManagementService\Parameters",
+            )
             .map_err(|e| format!("failed to open TextInputManagementService parameters: {e}"))?;
         let value = if enabled {
             r"%SystemRoot%\System32\MSCTF.DLL"
@@ -1473,7 +1484,7 @@ Invoke-WinUtilExplorerUpdate -action "restart"
                 Err(e) => {
                     return Err(format!(
                         "failed to remove GlobalTimerResolutionRequests: {e}"
-                    ))
+                    ));
                 }
             }
         }
@@ -1528,7 +1539,11 @@ Invoke-WinUtilExplorerUpdate -action "restart"
             .create_subkey(r"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters")
             .map_err(|e| format!("failed to open Tcpip6 parameters: {e}"))?;
         let current = key.get_value::<u32, _>("DisabledComponents").unwrap_or(0);
-        let next = if enabled { current | 0x20 } else { current & !0x20 };
+        let next = if enabled {
+            current | 0x20
+        } else {
+            current & !0x20
+        };
         key.set_value("DisabledComponents", &next)
             .map_err(|e| format!("failed to set DisabledComponents: {e}"))?;
         Ok(())
@@ -1561,9 +1576,9 @@ Invoke-WinUtilExplorerUpdate -action "restart"
 
     #[cfg(windows)]
     fn apply_teredo_disabled(enabled: bool) -> Result<(), String> {
+        use std::os::windows::process::CommandExt;
         use std::process::Command;
         use std::process::Stdio;
-        use std::os::windows::process::CommandExt;
         use winreg::enums::*;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
@@ -1571,7 +1586,11 @@ Invoke-WinUtilExplorerUpdate -action "restart"
             .create_subkey(r"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters")
             .map_err(|e| format!("failed to open Tcpip6 parameters: {e}"))?;
         let current = key.get_value::<u32, _>("DisabledComponents").unwrap_or(0);
-        let next = if enabled { current | 0x01 } else { current & !0x01 };
+        let next = if enabled {
+            current | 0x01
+        } else {
+            current & !0x01
+        };
         key.set_value("DisabledComponents", &next)
             .map_err(|e| format!("failed to set DisabledComponents: {e}"))?;
         let state = if enabled { "disabled" } else { "default" };
@@ -1647,9 +1666,9 @@ Invoke-WinUtilExplorerUpdate -action "restart"
 
     #[cfg(windows)]
     fn hpet_preferred_enabled() -> bool {
-        use std::process::{Command, Stdio};
         #[cfg(windows)]
         use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let output = Command::new("bcdedit")
             .args(["/enum", "{current}"])
@@ -1680,9 +1699,9 @@ Invoke-WinUtilExplorerUpdate -action "restart"
 
     #[cfg(windows)]
     fn apply_hpet_preferred(enabled: bool) -> Result<(), String> {
-        use std::process::{Command, Stdio};
         #[cfg(windows)]
         use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let value = if enabled { "false" } else { "true" };
         let status = Command::new("bcdedit")

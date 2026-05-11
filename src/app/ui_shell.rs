@@ -5,14 +5,13 @@ use iconflow::{Pack, Size, Style, fonts, try_icon};
 use std::sync::Arc;
 
 impl WinchiselApp {
-    pub(crate) fn tree_header_hover(
-        ui: &mut egui::Ui,
-        response: &egui::Response,
-    ) {
+    pub(crate) fn tree_header_hover(ui: &mut egui::Ui, response: &egui::Response) {
         let response = response.clone();
         let hovered = response.hovered();
         let rect = response.rect;
-        let _ = response.clone().on_hover_cursor(egui::CursorIcon::PointingHand);
+        let _ = response
+            .clone()
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
         if hovered {
             let rect = rect.expand(2.0);
             let fill = egui::Color32::from_rgba_unmultiplied(20, 54, 66, 96);

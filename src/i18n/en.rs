@@ -434,7 +434,9 @@ pub fn t(key: &str) -> &'static str {
         "extras_ctfmon_details_label" => "Patch TextInputManagementService",
         "extras_ctfmon_details_desc" => "Switch ServiceDll between TabSvc.dll and MSCTF.DLL.",
         "extras_timer_resolution_label" => "Windows 11 Timer Resolution",
-        "extras_timer_resolution_desc" => "Restore global timer resolution requests for games and apps.",
+        "extras_timer_resolution_desc" => {
+            "Restore global timer resolution requests for games and apps."
+        }
         "extras_ipv6_label" => "IPv6 - Set IPv4 as Preferred",
         "extras_ipv6_desc" => "Prefer IPv4 on networks where IPv6 is not configured.",
         "extras_teredo_label" => "Teredo - Disable",
@@ -455,7 +457,9 @@ pub fn t(key: &str) -> &'static str {
         "settings_application" => "Application",
         "settings_saved_auto" => "These settings are saved automatically.",
         "settings_disk_cleanup" => "Disk Cleanup - Run",
-        "settings_disk_cleanup_desc" => "Runs Disk Cleanup on drive C: and removes old Windows updates.",
+        "settings_disk_cleanup_desc" => {
+            "Runs Disk Cleanup on drive C: and removes old Windows updates."
+        }
         "settings_disk_cleanup_run" => "Run",
         "settings_temp_files" => "Temporary Files - Remove",
         "settings_temp_files_desc" => "Erase TEMP folders.",
@@ -466,7 +470,9 @@ pub fn t(key: &str) -> &'static str {
         "settings_disk_cleanup_failed_windows" => "Disk Cleanup is only supported on Windows.",
         "settings_temp_files_success" => "Temporary files were removed successfully.",
         "settings_temp_files_failed" => "Temporary file cleanup failed.",
-        "settings_temp_files_failed_windows" => "Temporary file cleanup is only supported on Windows.",
+        "settings_temp_files_failed_windows" => {
+            "Temporary file cleanup is only supported on Windows."
+        }
         "language" => "Language",
         "sidebar_languages" => "Languages",
         "archive-restore" => "Restore",

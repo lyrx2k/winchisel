@@ -438,21 +438,31 @@ pub fn t(key: &str) -> &'static str {
         "extras_edge_label" => "Microsoft Edge - Debloat",
         "extras_edge_desc" => "Microsoft-Edge-Policy-Debloat ein- oder ausschalten.",
         "extras_widgets_label" => "Widgets - Entfernen",
-        "extras_widgets_desc" => "Das Widgets-Paket aus der Taskleiste entfernen und bei Bedarf wiederherstellen.",
+        "extras_widgets_desc" => {
+            "Das Widgets-Paket aus der Taskleiste entfernen und bei Bedarf wiederherstellen."
+        }
         "extras_ctfmon_label" => "CTFMON-Interception stoppen",
         "extras_ctfmon_desc" => "Die Input-Service-Werte deaktivieren, die CTFMON abfangen können.",
         "extras_ctfmon_details_label" => "TextInputManagementService patchen",
         "extras_ctfmon_details_desc" => "ServiceDll zwischen TabSvc.dll und MSCTF.DLL umschalten.",
         "extras_timer_resolution_label" => "Windows 11 Timer-Auflösung",
-        "extras_timer_resolution_desc" => "Globale Timer-Resolution-Requests für Spiele und Apps wiederherstellen.",
+        "extras_timer_resolution_desc" => {
+            "Globale Timer-Resolution-Requests für Spiele und Apps wiederherstellen."
+        }
         "extras_ipv6_label" => "IPv6 - IPv4 bevorzugen",
-        "extras_ipv6_desc" => "IPv4 auf Netzwerken bevorzugen, auf denen IPv6 nicht konfiguriert ist.",
+        "extras_ipv6_desc" => {
+            "IPv4 auf Netzwerken bevorzugen, auf denen IPv6 nicht konfiguriert ist."
+        }
         "extras_teredo_label" => "Teredo - Deaktivieren",
-        "extras_teredo_desc" => "Teredo-Tunneling deaktivieren, um auf manchen Netzwerken Latenz zu senken.",
+        "extras_teredo_desc" => {
+            "Teredo-Tunneling deaktivieren, um auf manchen Netzwerken Latenz zu senken."
+        }
         "extras_ps7_label" => "PowerShell 7 Telemetry - Deaktivieren",
         "extras_ps7_desc" => "PowerShell 7 Telemetrie auf diesem System deaktivieren.",
         "extras_hpet_label" => "HPET deaktivieren",
-        "extras_hpet_desc" => "HPET deaktivieren für bessere Leistung in manchen Anti-Cheats und Spielen.",
+        "extras_hpet_desc" => {
+            "HPET deaktivieren für bessere Leistung in manchen Anti-Cheats und Spielen."
+        }
         "extras_brave_on_applied" => "Brave Debloat aktiviert.",
         "extras_brave_off_applied" => "Brave Debloat deaktiviert.",
         "check_updates" => "Updates prüfen",
@@ -461,7 +471,9 @@ pub fn t(key: &str) -> &'static str {
         "settings_application" => "Anwendung",
         "settings_saved_auto" => "Diese Einstellungen werden automatisch gespeichert.",
         "settings_disk_cleanup" => "Datenträgerbereinigung - Starten",
-        "settings_disk_cleanup_desc" => "Startet die Datenträgerbereinigung auf Laufwerk C: und entfernt alte Windows-Updates.",
+        "settings_disk_cleanup_desc" => {
+            "Startet die Datenträgerbereinigung auf Laufwerk C: und entfernt alte Windows-Updates."
+        }
         "settings_disk_cleanup_run" => "Starten",
         "settings_temp_files" => "Temporäre Dateien - Entfernen",
         "settings_temp_files_desc" => "Leert die TEMP-Ordner.",
@@ -469,10 +481,14 @@ pub fn t(key: &str) -> &'static str {
         "settings_close" => "Schließen",
         "settings_disk_cleanup_success" => "Datenträgerbereinigung erfolgreich abgeschlossen.",
         "settings_disk_cleanup_failed" => "Datenträgerbereinigung fehlgeschlagen.",
-        "settings_disk_cleanup_failed_windows" => "Datenträgerbereinigung wird nur unter Windows unterstützt.",
+        "settings_disk_cleanup_failed_windows" => {
+            "Datenträgerbereinigung wird nur unter Windows unterstützt."
+        }
         "settings_temp_files_success" => "Temporäre Dateien wurden erfolgreich entfernt.",
         "settings_temp_files_failed" => "Das Entfernen temporärer Dateien ist fehlgeschlagen.",
-        "settings_temp_files_failed_windows" => "Das Entfernen temporärer Dateien wird nur unter Windows unterstützt.",
+        "settings_temp_files_failed_windows" => {
+            "Das Entfernen temporärer Dateien wird nur unter Windows unterstützt."
+        }
         "language" => "Sprache",
         "sidebar_languages" => "Sprachen",
         "archive-restore" => "Wiederherstellen",
