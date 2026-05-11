@@ -446,9 +446,13 @@ pub fn t(key: &str) -> &'static str {
         "extras_hpet_label" => "Disable HPET",
         "extras_hpet_desc" => "Disable HPET for better performance in some anti-cheats and games.",
         "extras_modern_standby_label" => "Disable Modern Standby",
-        "extras_modern_standby_desc" => "Disable S0 Modern Standby to prevent battery drain and heat in sleep.",
+        "extras_modern_standby_desc" => {
+            "Disable S0 Modern Standby to prevent battery drain and heat in sleep."
+        }
         "extras_sync_provider_label" => "Disable Sync Provider Notifications",
-        "extras_sync_provider_desc" => "Disable sync provider notifications in Windows File Explorer.",
+        "extras_sync_provider_desc" => {
+            "Disable sync provider notifications in Windows File Explorer."
+        }
         "extras_power_plan_label" => "Winchisel Power Plan",
         "extras_power_plan_desc" => "Imports and activates the optimized Winchisel power plan.",
         "extras_power_plan_active" => "Active",
@@ -898,6 +902,7 @@ pub fn t(key: &str) -> &'static str {
         "update_newer_version_prefix" => "A newer version is available:",
         "update_ready" => "Ready",
         "update_checked" => "You are already on the latest version.",
+        "update_check_cooldown" => "Please wait a moment before checking again.",
         "settings_saved" => "Settings saved",
         "update_no_found_title" => "No Update Found",
         "update_available_title" => "Update Available",
@@ -914,6 +919,12 @@ pub fn t(key: &str) -> &'static str {
         "update_error_resolve_current_exe" => "Failed to resolve current executable",
         "update_error_write_update_script" => "Failed to write update script",
         "update_error_launch_updater" => "Failed to launch updater",
+        "update_error_no_body" => "No release description found",
+        "update_error_hash_not_found" => "SHA256 not found in release description",
+        "update_error_hash_compute" => "Failed to compute file hash",
+        "update_error_hash_mismatch" => {
+            "SHA256 checksum mismatch — update file may be corrupted or tampered with"
+        }
         "update_download_restart" => "Download and restart the app to install it.",
         "update_failed" => "Update check failed.",
         "update_close" => "Close",

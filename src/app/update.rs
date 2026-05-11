@@ -9,6 +9,14 @@ impl WinchiselApp {
         if self.update_check_rx.is_some() || self.state.update_check_loading {
             return;
         }
+        if let Some(cooldown) = self.update_check_cooldown_until
+            && std::time::Instant::now() < cooldown
+        {
+            self.toasts
+                .warning(self.tr("update_check_cooldown"))
+                .duration(Duration::from_secs_f64(2.5));
+            return;
+        }
         self.state.update_check_loading = true;
         self.update_dialog_on_complete = show_dialog;
         let (tx, rx) = mpsc::channel();
@@ -35,8 +43,8 @@ impl WinchiselApp {
                     UpdateCheckResult::UpToDate => {
                         self.state.update_status = self.tr("update_checked").to_string();
                         self.toasts
-                            .info(self.tr("update_checked"))
-                            .duration(Duration::from_secs_f64(2.5));
+                            .success(self.tr("update_checked"))
+                            .duration(Duration::from_secs_f64(3.5));
                     }
                     UpdateCheckResult::UpdateAvailable(version) => {
                         self.state.update_status =
@@ -64,12 +72,16 @@ impl WinchiselApp {
                         };
                         let message = format!("{} {}", localized_prefix, err);
                         self.state.update_status = message.clone();
-                        self.toasts.error(message).duration(Duration::from_secs_f64(3.5));
+                        self.toasts
+                            .error(message)
+                            .duration(Duration::from_secs_f64(3.5));
                         if self.update_dialog_on_complete {
                             self.pending_update_dialog = Some(UpdateDialog::Error { message: err });
                         }
                     }
                 }
+                self.update_check_cooldown_until =
+                    Some(std::time::Instant::now() + Duration::from_secs(30));
                 self.update_dialog_on_complete = false;
             }
             Err(mpsc::TryRecvError::Empty) => {}
@@ -111,8 +123,12 @@ impl WinchiselApp {
                                 self.tr("update_failed"),
                             );
                             let display_message = match message.as_str() {
-                                "update_error_check_updates" => self.tr("update_error_check_updates"),
-                                "update_error_read_response" => self.tr("update_error_read_response"),
+                                "update_error_check_updates" => {
+                                    self.tr("update_error_check_updates")
+                                }
+                                "update_error_read_response" => {
+                                    self.tr("update_error_read_response")
+                                }
                                 "update_error_parse_json" => self.tr("update_error_parse_json"),
                                 "update_error_no_tag_name" => self.tr("update_error_no_tag_name"),
                                 "update_error_download" => self.tr("update_error_download"),
@@ -131,7 +147,17 @@ impl WinchiselApp {
                                 "update_error_write_update_script" => {
                                     self.tr("update_error_write_update_script")
                                 }
-                                "update_error_launch_updater" => self.tr("update_error_launch_updater"),
+                                "update_error_launch_updater" => {
+                                    self.tr("update_error_launch_updater")
+                                }
+                                "update_error_no_body" => self.tr("update_error_no_body"),
+                                "update_error_hash_not_found" => {
+                                    self.tr("update_error_hash_not_found")
+                                }
+                                "update_error_hash_compute" => self.tr("update_error_hash_compute"),
+                                "update_error_hash_mismatch" => {
+                                    self.tr("update_error_hash_mismatch")
+                                }
                                 _ => message.as_str(),
                             };
                             ui.label(display_message);

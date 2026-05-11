@@ -560,6 +560,7 @@ pub fn t(key: &str) -> &'static str {
         "update_newer_version_prefix" => "Eine neuere Version ist verfügbar:",
         "update_ready" => "Bereit",
         "update_checked" => "Du bist bereits auf der neuesten Version.",
+        "update_check_cooldown" => "Bitte warte einen Moment, bevor du erneut prüfst.",
         "settings_saved" => "Einstellungen gespeichert",
         "update_no_found_title" => "Kein Update gefunden",
         "update_available_title" => "Update verfügbar",
@@ -578,6 +579,12 @@ pub fn t(key: &str) -> &'static str {
         }
         "update_error_write_update_script" => "Update-Skript konnte nicht geschrieben werden",
         "update_error_launch_updater" => "Updater konnte nicht gestartet werden",
+        "update_error_no_body" => "Keine Release-Beschreibung gefunden",
+        "update_error_hash_not_found" => "SHA256 nicht in Release-Beschreibung gefunden",
+        "update_error_hash_compute" => "Datei-Hash konnte nicht berechnet werden",
+        "update_error_hash_mismatch" => {
+            "SHA256-Prüfsumme stimmt nicht überein — Update-Datei möglicherweise beschädigt oder manipuliert"
+        }
         "update_download_restart" => {
             "Lade die App herunter und starte sie neu, um das Update zu installieren."
         }

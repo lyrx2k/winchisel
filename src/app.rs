@@ -336,6 +336,7 @@ pub struct WinchiselApp {
     update_check_rx: Option<Receiver<UpdateCheckResult>>,
     pending_update_dialog: Option<UpdateDialog>,
     update_dialog_on_complete: bool,
+    update_check_cooldown_until: Option<Instant>,
     settings_save_due_at: Option<Instant>,
     settings_save_snapshot: AppSettings,
 }
@@ -504,6 +505,7 @@ impl WinchiselApp {
             update_check_rx: None,
             pending_update_dialog: None,
             update_dialog_on_complete: false,
+            update_check_cooldown_until: None,
             settings_save_due_at: None,
             settings_save_snapshot: settings,
         }

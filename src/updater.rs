@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::fs;
 
 const REPO: &str = "lyrx2k/Winchisel";
@@ -27,12 +28,38 @@ pub fn check_for_update() -> Result<Option<String>, String> {
 }
 
 pub fn download_and_install(tag: &str) -> Result<(), String> {
-    let url = format!(
+    // 1. Fetch release info to get SHA256 from body
+    let api_url = format!(
+        "https://api.github.com/repos/{}/releases/tags/{}",
+        REPO, tag
+    );
+    let mut api_response = ureq::get(&api_url)
+        .header("User-Agent", "Winchisel-Updater")
+        .call()
+        .map_err(|_| "update_error_check_updates".to_string())?;
+
+    let api_body = api_response
+        .body_mut()
+        .read_to_string()
+        .map_err(|_| "update_error_read_response".to_string())?;
+
+    let json: serde_json::Value =
+        serde_json::from_str(&api_body).map_err(|_| "update_error_parse_json".to_string())?;
+
+    let release_body = json
+        .get("body")
+        .and_then(|v| v.as_str())
+        .ok_or("update_error_no_body".to_string())?;
+
+    let expected_hash =
+        extract_sha256_from_body(release_body).ok_or("update_error_hash_not_found".to_string())?;
+
+    // 2. Download EXE
+    let exe_url = format!(
         "https://github.com/{}/releases/download/{}/Winchisel.exe",
         REPO, tag
     );
-
-    let mut response = ureq::get(&url)
+    let mut response = ureq::get(&exe_url)
         .header("User-Agent", "Winchisel-Updater")
         .call()
         .map_err(|_| "update_error_download".to_string())?;
@@ -48,11 +75,21 @@ pub fn download_and_install(tag: &str) -> Result<(), String> {
     drop(file);
 
     if bytes < 100_000 {
+        let _ = fs::remove_file(&update_exe);
         return Err(format!("update_error_download_too_small:{}", bytes));
     }
 
-    let current_exe = std::env::current_exe()
-        .map_err(|_| "update_error_resolve_current_exe".to_string())?;
+    // 3. Verify SHA256
+    let actual_hash =
+        compute_sha256(&update_exe).map_err(|_| "update_error_hash_compute".to_string())?;
+
+    if actual_hash != expected_hash {
+        let _ = fs::remove_file(&update_exe);
+        return Err("update_error_hash_mismatch".to_string());
+    }
+
+    let current_exe =
+        std::env::current_exe().map_err(|_| "update_error_resolve_current_exe".to_string())?;
 
     #[cfg(target_os = "windows")]
     {
@@ -78,6 +115,31 @@ pub fn download_and_install(tag: &str) -> Result<(), String> {
     }
 
     std::process::exit(0);
+}
+
+fn extract_sha256_from_body(body: &str) -> Option<String> {
+    body.lines()
+        .find(|line| line.trim_start().to_uppercase().starts_with("SHA256:"))
+        .and_then(|line| line.split(':').nth(1).map(|s| s.trim().to_lowercase()))
+}
+
+fn compute_sha256(path: &std::path::Path) -> Result<String, std::io::Error> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 8192];
+    loop {
+        let n = file.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect())
 }
 
 fn is_newer(current: &str, latest: &str) -> bool {
