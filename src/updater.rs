@@ -10,6 +10,13 @@ pub enum MsiDownloadEvent {
 
 const REPO: &str = "lyrx2k/Winchisel";
 
+fn update_dir() -> std::path::PathBuf {
+    if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
+        return std::path::PathBuf::from(local_appdata).join("Winchisel");
+    }
+    std::env::temp_dir().join("Winchisel")
+}
+
 pub fn check_for_update() -> Result<Option<String>, String> {
     let url = format!("https://api.github.com/repos/{}/releases/latest", REPO);
     let mut response = ureq::get(&url)
@@ -71,8 +78,9 @@ pub fn download_and_install(tag: &str) -> Result<(), String> {
         .call()
         .map_err(|_| "update_error_download".to_string())?;
 
-    let temp_dir = std::env::temp_dir();
-    let update_exe = temp_dir.join("Winchisel_update.exe");
+    let update_dir = update_dir();
+    let _ = std::fs::create_dir_all(&update_dir);
+    let update_exe = update_dir.join("Winchisel_update.exe");
 
     let mut file =
         fs::File::create(&update_exe).map_err(|_| "update_error_create_temp_file".to_string())?;
@@ -110,7 +118,7 @@ pub fn download_and_install(tag: &str) -> Result<(), String> {
             current_exe.display()
         );
 
-        let bat_path = temp_dir.join("Winchisel_update.bat");
+        let bat_path = update_dir.join("Winchisel_update.bat");
         fs::write(&bat_path, bat.as_bytes())
             .map_err(|_| "update_error_write_update_script".to_string())?;
 
@@ -144,8 +152,9 @@ pub fn download_msi(
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
 
-    let temp_dir = std::env::temp_dir();
-    let update_msi = temp_dir.join("Winchisel_Installer.msi");
+    let update_dir = update_dir();
+    let _ = std::fs::create_dir_all(&update_dir);
+    let update_msi = update_dir.join("Winchisel_Installer.msi");
 
     let mut file =
         fs::File::create(&update_msi).map_err(|_| "update_error_create_temp_file".to_string())?;
@@ -176,19 +185,23 @@ pub fn download_msi(
     Ok(update_msi)
 }
 
-pub fn install_msi(msi_path: &std::path::Path) -> Result<(), String> {
+pub fn install_msi_and_restart(msi_path: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+        let exe_path = std::env::current_exe()
+            .map_err(|_| "update_error_resolve_current_exe".to_string())?;
+
         let bat = format!(
-            "@echo off\r\nping -n 3 127.0.0.1 > nul\r\nmsiexec /i \"{}\" /qn\r\ndel \"{}\"\r\ndel \"%~f0\"\r\n",
+            "@echo off\r\nping -n 4 127.0.0.1 > nul\r\nmsiexec /i \"{}\" /qn\r\nping -n 3 127.0.0.1 > nul\r\nstart \"\" \"{}\"\r\ndel \"{}\"\r\ndel \"%~f0\"\r\n",
             msi_path.display(),
+            exe_path.display(),
             msi_path.display()
         );
 
-        let bat_path = std::env::temp_dir().join("Winchisel_update.bat");
+        let bat_path = update_dir().join("Winchisel_update.bat");
         fs::write(&bat_path, bat.as_bytes())
             .map_err(|_| "update_error_write_update_script".to_string())?;
 

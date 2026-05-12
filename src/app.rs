@@ -108,6 +108,7 @@ struct AppState {
     update_check_started: bool,
     msi_download_progress: f32,
     msi_download_installing: bool,
+    msi_install_started_at: Option<Instant>,
     last_saved_settings: AppSettings,
     debloater: debloater::DebloaterState,
     downloads: DownloadsState,
@@ -488,6 +489,7 @@ impl WinchiselApp {
                 home_last_refresh: None,
                 msi_download_progress: 0.0,
                 msi_download_installing: false,
+                msi_install_started_at: None,
             },
             system,
             icon_cache: IconCache::default(),
@@ -1186,10 +1188,16 @@ impl WinchiselApp {
     }
 
     pub(crate) fn poll_msi_download(&mut self) {
-        // If download finished and we have the MSI path, trigger installation
+        // If download finished and we have the MSI path, wait 2s then trigger installation + restart
         if self.state.msi_download_installing {
-            if let Some(msi_path) = self.msi_download_msi_path.take() {
-                let _ = crate::updater::install_msi(&msi_path);
+            if let Some(started_at) = self.state.msi_install_started_at {
+                if started_at.elapsed() >= Duration::from_secs(2) {
+                    if let Some(msi_path) = self.msi_download_msi_path.take() {
+                        let _ = crate::updater::install_msi_and_restart(&msi_path);
+                    }
+                }
+            } else {
+                self.state.msi_install_started_at = Some(Instant::now());
             }
             return;
         }
