@@ -102,6 +102,18 @@ impl WinchiselApp {
                         ui.label(show_console);
                         Self::native_toggle_switch(ui, &mut self.state.settings.show_console);
                     });
+                    ui.horizontal(|ui| {
+                        ui.label(Self::icon_text(
+                            Pack::Lucide,
+                            "power",
+                            14.0,
+                            egui::Color32::from_rgb(226, 226, 226),
+                        ));
+                        ui.label(self.tr("settings_autostart"));
+                        if Self::native_toggle_switch(ui, &mut self.state.settings.autostart_enabled).changed() {
+                            let _ = crate::set_autostart_enabled(self.state.settings.autostart_enabled);
+                        }
+                    });
                     ui.add_space(12.0);
                     ui.separator();
                     ui.add_space(12.0);

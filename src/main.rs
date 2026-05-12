@@ -43,6 +43,7 @@ pub struct AppSettings {
     pub check_updates_on_startup: bool,
     pub show_console: bool,
     pub language: Language,
+    pub autostart_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -51,6 +52,7 @@ impl Default for AppSettings {
             check_updates_on_startup: true,
             show_console: false,
             language: Language::English,
+            autostart_enabled: false,
         }
     }
 }
@@ -252,6 +254,42 @@ pub fn is_msi_install() -> bool {
 #[cfg(not(target_os = "windows"))]
 pub fn is_msi_install() -> bool {
     false
+}
+
+#[cfg(target_os = "windows")]
+pub fn is_autostart_enabled() -> bool {
+    use winreg::enums::*;
+    let hkcu = winreg::RegKey::predef(HKEY_CURRENT_USER);
+    hkcu.open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_READ)
+        .and_then(|key| key.get_value::<String, _>("Winchisel"))
+        .is_ok()
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn is_autostart_enabled() -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
+pub fn set_autostart_enabled(enabled: bool) -> Result<(), String> {
+    use winreg::enums::*;
+    let hkcu = winreg::RegKey::predef(HKEY_CURRENT_USER);
+    let key = hkcu
+        .open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_WRITE)
+        .map_err(|e| format!("Failed to open Run key: {}", e))?;
+    if enabled {
+        let exe = std::env::current_exe().map_err(|e| format!("Failed to get exe path: {}", e))?;
+        key.set_value("Winchisel", &exe.to_string_lossy().to_string())
+            .map_err(|e| format!("Failed to set autostart: {}", e))?;
+    } else {
+        let _ = key.delete_value("Winchisel");
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn set_autostart_enabled(_enabled: bool) -> Result<(), String> {
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]

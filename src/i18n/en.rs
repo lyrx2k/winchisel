@@ -487,6 +487,7 @@ pub fn t(key: &str) -> &'static str {
             "Temporary file cleanup is only supported on Windows."
         }
         "settings_msi_update_auto" => "Updates are installed automatically via MSI.",
+        "settings_autostart" => "Start with Windows",
         "language" => "Language",
         "sidebar_languages" => "Languages",
         "archive-restore" => "Restore",

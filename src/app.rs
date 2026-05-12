@@ -365,7 +365,15 @@ impl WinchiselApp {
         }
     }
 
-    pub fn new(settings: AppSettings, is_admin: bool) -> Self {
+    pub fn new(mut settings: AppSettings, is_admin: bool) -> Self {
+        #[cfg(target_os = "windows")]
+        {
+            let registry_autostart = crate::is_autostart_enabled();
+            if settings.autostart_enabled != registry_autostart {
+                settings.autostart_enabled = registry_autostart;
+                crate::save_app_settings(&settings);
+            }
+        }
         let mut system = sysinfo::System::new_all();
         let debloater_items = get_all_apps(settings.language);
         let (debloater_load_worker, debloater_loading) =
@@ -545,7 +553,8 @@ impl WinchiselApp {
         let settings_changed = self.state.settings.check_updates_on_startup
             != self.settings_save_snapshot.check_updates_on_startup
             || self.state.settings.show_console != self.settings_save_snapshot.show_console
-            || self.state.settings.language != self.settings_save_snapshot.language;
+            || self.state.settings.language != self.settings_save_snapshot.language
+            || self.state.settings.autostart_enabled != self.settings_save_snapshot.autostart_enabled;
 
         if settings_changed {
             self.settings_save_snapshot = self.state.settings.clone();
