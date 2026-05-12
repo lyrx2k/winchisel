@@ -871,7 +871,6 @@ impl eframe::App for WinchiselApp {
         if self.state.settings.check_updates_on_startup
             && !self.state.update_check_started
             && !self.state.update_check_loading
-            && !self.state.is_msi_install
         {
             self.state.update_check_started = true;
             self.start_update_check(true);

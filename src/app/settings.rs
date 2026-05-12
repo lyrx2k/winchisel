@@ -78,20 +78,6 @@ impl WinchiselApp {
                             &mut self.state.settings.check_updates_on_startup,
                         );
                     });
-                    if self.state.is_msi_install {
-                        ui.horizontal(|ui| {
-                            ui.label(Self::icon_text(
-                                Pack::Lucide,
-                                "check-circle",
-                                14.0,
-                                egui::Color32::from_rgb(96, 181, 103),
-                            ));
-                            ui.colored_label(
-                                egui::Color32::from_rgb(96, 181, 103),
-                                self.tr("settings_msi_update_auto"),
-                            );
-                        });
-                    }
                     ui.horizontal(|ui| {
                         ui.label(Self::icon_text(
                             Pack::Lucide,

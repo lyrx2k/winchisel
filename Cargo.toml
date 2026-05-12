@@ -3,7 +3,7 @@ authors = ["lyrx2k"]
 name = "Winchisel"
 description = "Winchisel is a native Windows tweaking utility written in Rust."
 repository = "https://github.com/lyrx2k/winchisel"
-version = "0.1.7 "
+version = "0.1.7"
 edition = "2024"
 build = "src/build.rs"
 

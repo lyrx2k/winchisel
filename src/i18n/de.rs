@@ -504,7 +504,6 @@ pub fn t(key: &str) -> &'static str {
         "settings_temp_files_failed_windows" => {
             "Das Entfernen temporärer Dateien wird nur unter Windows unterstützt."
         }
-        "settings_msi_update_auto" => "Updates werden automatisch über MSI installiert.",
         "settings_autostart" => "Mit Windows starten",
         "language" => "Sprache",
         "sidebar_languages" => "Sprachen",
