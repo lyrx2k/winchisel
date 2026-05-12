@@ -239,6 +239,22 @@ pub(crate) fn open_url(url: &str) {
 }
 
 #[cfg(target_os = "windows")]
+pub fn is_msi_install() -> bool {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let path_lower = parent.to_string_lossy().to_lowercase();
+            return path_lower.contains("program files") && path_lower.contains("winchisel");
+        }
+    }
+    false
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn is_msi_install() -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
 fn restart_as_admin() {
     if let Ok(exe) = std::env::current_exe() {
         use std::os::windows::ffi::OsStrExt;

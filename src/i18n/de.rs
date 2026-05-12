@@ -504,6 +504,7 @@ pub fn t(key: &str) -> &'static str {
         "settings_temp_files_failed_windows" => {
             "Das Entfernen temporärer Dateien wird nur unter Windows unterstützt."
         }
+        "settings_msi_update_auto" => "Updates werden automatisch über MSI installiert.",
         "language" => "Sprache",
         "sidebar_languages" => "Sprachen",
         "archive-restore" => "Wiederherstellen",
@@ -592,6 +593,13 @@ pub fn t(key: &str) -> &'static str {
         "update_close" => "Schließen",
         "update_check_again" => "Erneut prüfen",
         "update_download_restart_btn" => "Herunterladen & neu starten",
+        "update_msi_install_btn" => "Update installieren",
+        "update_msi_auto_hint" => "Das Update wird automatisch installiert. Winchisel schließt sich kurz.",
+        "update_downloading_title" => "Update wird heruntergeladen",
+        "update_downloading_desc" => "Herunterladen:",
+        "update_installing_title" => "Update wird installiert",
+        "update_installing_desc" => "Das Update wird installiert.",
+        "update_installing_wait" => "Bitte warten — Winchisel startet automatisch neu.",
         "restore_point_window" => "Wiederherstellungspunkt erstellen",
         "restore_point_creating" => {
             "Wiederherstellungspunkt wird erstellt. Das kann einen Moment dauern..."

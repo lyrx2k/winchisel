@@ -486,6 +486,7 @@ pub fn t(key: &str) -> &'static str {
         "settings_temp_files_failed_windows" => {
             "Temporary file cleanup is only supported on Windows."
         }
+        "settings_msi_update_auto" => "Updates are installed automatically via MSI.",
         "language" => "Language",
         "sidebar_languages" => "Languages",
         "archive-restore" => "Restore",
@@ -930,6 +931,13 @@ pub fn t(key: &str) -> &'static str {
         "update_close" => "Close",
         "update_check_again" => "Check Again",
         "update_download_restart_btn" => "Download & Restart",
+        "update_msi_install_btn" => "Install Update",
+        "update_msi_auto_hint" => "The update will be installed automatically. Winchisel will close briefly.",
+        "update_downloading_title" => "Downloading Update",
+        "update_downloading_desc" => "Downloading:",
+        "update_installing_title" => "Installing Update",
+        "update_installing_desc" => "The update is being installed.",
+        "update_installing_wait" => "Please wait — Winchisel will restart automatically.",
         "restore_point_window" => "Create Restore Point",
         "restore_point_creating" => "Creating restore point. This can take a moment...",
         "restore_point_success" => "Restore point created successfully.",

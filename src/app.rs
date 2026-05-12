@@ -101,10 +101,13 @@ pub(crate) struct HomeState {
 struct AppState {
     settings: AppSettings,
     is_admin: bool,
+    is_msi_install: bool,
     active_tab: Tab,
     update_status: String,
     update_check_loading: bool,
     update_check_started: bool,
+    msi_download_progress: f32,
+    msi_download_installing: bool,
     last_saved_settings: AppSettings,
     debloater: debloater::DebloaterState,
     downloads: DownloadsState,
@@ -192,6 +195,10 @@ struct ExtrasBoolWorker {
 
 struct ExtrasLoadWorker {
     rx: Receiver<ExtrasState>,
+}
+
+struct MsiDownloadWorker {
+    rx: Receiver<crate::updater::MsiDownloadEvent>,
 }
 
 #[derive(Clone)]
@@ -337,6 +344,8 @@ pub struct WinchiselApp {
     pending_update_dialog: Option<UpdateDialog>,
     update_dialog_on_complete: bool,
     update_check_cooldown_until: Option<Instant>,
+    msi_download_worker: Option<MsiDownloadWorker>,
+    msi_download_msi_path: Option<std::path::PathBuf>,
     settings_save_due_at: Option<Instant>,
     settings_save_snapshot: AppSettings,
 }
@@ -385,6 +394,7 @@ impl WinchiselApp {
                 },
                 settings: settings.clone(),
                 is_admin,
+                is_msi_install: crate::is_msi_install(),
                 active_tab: Tab::Home,
                 update_status: t(settings.language, "update_ready").to_string(),
                 update_check_loading: false,
@@ -476,6 +486,8 @@ impl WinchiselApp {
                     winchisel_power_plan_loaded: false,
                 },
                 home_last_refresh: None,
+                msi_download_progress: 0.0,
+                msi_download_installing: false,
             },
             system,
             icon_cache: IconCache::default(),
@@ -501,6 +513,8 @@ impl WinchiselApp {
             extras_hpet_worker: None,
             extras_power_plan_worker: None,
             extras_load_worker: None,
+            msi_download_worker: None,
+            msi_download_msi_path: None,
             toasts: Toasts::default().with_anchor(egui_notify::Anchor::BottomRight),
             update_check_rx: None,
             pending_update_dialog: None,
@@ -816,6 +830,7 @@ impl eframe::App for WinchiselApp {
         self.poll_system_repair();
         self.poll_settings_actions();
         self.poll_update_check();
+        self.poll_msi_download();
         if self.state.active_tab == Tab::Extras
             && !self.state.extras.brave_debloat_loaded
             && self.extras_load_worker.is_none()
@@ -845,6 +860,7 @@ impl eframe::App for WinchiselApp {
         if self.state.settings.check_updates_on_startup
             && !self.state.update_check_started
             && !self.state.update_check_loading
+            && !self.state.is_msi_install
         {
             self.state.update_check_started = true;
             self.start_update_check(true);
@@ -1167,6 +1183,52 @@ impl eframe::App for WinchiselApp {
 impl WinchiselApp {
     fn bump_repaint_after(slot: &mut Option<Duration>, next: Duration) {
         *slot = Some(slot.map_or(next, |cur| cur.min(next)));
+    }
+
+    pub(crate) fn poll_msi_download(&mut self) {
+        // If download finished and we have the MSI path, trigger installation
+        if self.state.msi_download_installing {
+            if let Some(msi_path) = self.msi_download_msi_path.take() {
+                let _ = crate::updater::install_msi(&msi_path);
+            }
+            return;
+        }
+
+        let Some(worker) = self.msi_download_worker.as_ref() else {
+            return;
+        };
+        loop {
+            match worker.rx.try_recv() {
+                Ok(crate::updater::MsiDownloadEvent::Progress(downloaded, total)) => {
+                    if total > 0 {
+                        self.state.msi_download_progress = downloaded as f32 / total as f32;
+                    } else {
+                        self.state.msi_download_progress = 0.0;
+                    }
+                }
+                Ok(crate::updater::MsiDownloadEvent::Done(result)) => {
+                    self.msi_download_worker = None;
+                    self.state.msi_download_progress = 1.0;
+                    match result {
+                        Ok(msi_path) => {
+                            self.msi_download_msi_path = Some(msi_path);
+                            self.state.msi_download_installing = true;
+                        }
+                        Err(err) => {
+                            self.pending_update_dialog = Some(UpdateDialog::Error {
+                                message: err,
+                            });
+                        }
+                    }
+                    break;
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.msi_download_worker = None;
+                    break;
+                }
+            }
+        }
     }
 
     fn load_extras_state() -> ExtrasState {

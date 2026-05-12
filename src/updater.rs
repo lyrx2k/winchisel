@@ -1,5 +1,12 @@
 use sha2::{Digest, Sha256};
 use std::fs;
+use std::io::{Read, Write};
+
+#[derive(Debug)]
+pub enum MsiDownloadEvent {
+    Progress(u64, u64),
+    Done(Result<std::path::PathBuf, String>),
+}
 
 const REPO: &str = "lyrx2k/Winchisel";
 
@@ -104,6 +111,84 @@ pub fn download_and_install(tag: &str) -> Result<(), String> {
         );
 
         let bat_path = temp_dir.join("Winchisel_update.bat");
+        fs::write(&bat_path, bat.as_bytes())
+            .map_err(|_| "update_error_write_update_script".to_string())?;
+
+        std::process::Command::new("cmd")
+            .args(["/c", bat_path.to_string_lossy().as_ref()])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|_| "update_error_launch_updater".to_string())?;
+    }
+
+    std::process::exit(0);
+}
+
+pub fn download_msi(
+    tag: &str,
+    event_tx: std::sync::mpsc::Sender<MsiDownloadEvent>,
+) -> Result<std::path::PathBuf, String> {
+    let msi_url = format!(
+        "https://github.com/{}/releases/download/{}/Winchisel_Installer.msi",
+        REPO, tag
+    );
+    let mut response = ureq::get(&msi_url)
+        .header("User-Agent", "Winchisel-Updater")
+        .call()
+        .map_err(|_| "update_error_download".to_string())?;
+
+    let total_size = response
+        .headers()
+        .get("Content-Length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    let temp_dir = std::env::temp_dir();
+    let update_msi = temp_dir.join("Winchisel_Installer.msi");
+
+    let mut file =
+        fs::File::create(&update_msi).map_err(|_| "update_error_create_temp_file".to_string())?;
+
+    let mut reader = response.body_mut().as_reader();
+    let mut buffer = [0u8; 8192];
+    let mut downloaded = 0u64;
+
+    loop {
+        let n = reader
+            .read(&mut buffer)
+            .map_err(|_| "update_error_download".to_string())?;
+        if n == 0 {
+            break;
+        }
+        file.write_all(&buffer[..n])
+            .map_err(|_| "update_error_write_update_file".to_string())?;
+        downloaded += n as u64;
+        let _ = event_tx.send(MsiDownloadEvent::Progress(downloaded, total_size));
+    }
+    drop(file);
+
+    if downloaded < 100_000 {
+        let _ = fs::remove_file(&update_msi);
+        return Err(format!("update_error_download_too_small:{}", downloaded));
+    }
+
+    Ok(update_msi)
+}
+
+pub fn install_msi(msi_path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let bat = format!(
+            "@echo off\r\nping -n 3 127.0.0.1 > nul\r\nmsiexec /i \"{}\" /qn\r\ndel \"{}\"\r\ndel \"%~f0\"\r\n",
+            msi_path.display(),
+            msi_path.display()
+        );
+
+        let bat_path = std::env::temp_dir().join("Winchisel_update.bat");
         fs::write(&bat_path, bat.as_bytes())
             .map_err(|_| "update_error_write_update_script".to_string())?;
 

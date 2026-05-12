@@ -94,6 +94,45 @@ impl WinchiselApp {
     }
 
     pub(crate) fn show_update_dialog(&mut self, ctx: &egui::Context) {
+        // MSI download/install in progress → show progress dialog instead
+        if self.msi_download_worker.is_some() || self.state.msi_download_installing {
+            let title = if self.state.msi_download_installing {
+                self.tr("update_installing_title")
+            } else {
+                self.tr("update_downloading_title")
+            };
+            egui::Window::new(title)
+                .collapsible(false)
+                .resizable(false)
+                .default_width(360.0)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .show(ctx, |ui| {
+                    ui.vertical(|ui| {
+                        if self.state.msi_download_installing {
+                            ui.label(self.tr("update_installing_desc"));
+                            ui.add_space(12.0);
+                            ui.horizontal(|ui| {
+                                ui.add(egui::Spinner::new().size(22.0));
+                                ui.label(self.tr("update_installing_wait"));
+                            });
+                        } else {
+                            let pct = (self.state.msi_download_progress * 100.0).clamp(0.0, 100.0);
+                            ui.label(format!(
+                                "{} {:.0}%",
+                                self.tr("update_downloading_desc"),
+                                pct
+                            ));
+                            ui.add_space(8.0);
+                            ui.add(
+                                egui::ProgressBar::new(self.state.msi_download_progress)
+                                    .desired_width(320.0),
+                            );
+                        }
+                    });
+                });
+            return;
+        }
+
         let Some(dialog) = self.pending_update_dialog.clone() else {
             return;
         };
@@ -116,6 +155,13 @@ impl WinchiselApp {
                                 latest_version
                             ));
                             ui.label(self.tr("update_download_restart"));
+                            if self.state.is_msi_install {
+                                ui.add_space(4.0);
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(226, 196, 84),
+                                    self.tr("update_msi_auto_hint"),
+                                );
+                            }
                         }
                         UpdateDialog::Error { message } => {
                             ui.colored_label(
@@ -168,21 +214,34 @@ impl WinchiselApp {
                         if ui.button(self.tr("update_close")).clicked() {
                             self.pending_update_dialog = None;
                         }
-                        if matches!(dialog, UpdateDialog::UpdateAvailable { .. })
-                            && ui.button(self.tr("update_download_restart_btn")).clicked()
-                            && let UpdateDialog::UpdateAvailable { latest_version } = dialog.clone()
-                        {
-                            self.pending_update_dialog = None;
-                            if let Err(e) = updater::download_and_install(&latest_version) {
-                                self.pending_update_dialog =
-                                    Some(UpdateDialog::Error { message: e });
+                        if matches!(dialog, UpdateDialog::UpdateAvailable { .. }) {
+                            if self.state.is_msi_install {
+                                if ui.button(self.tr("update_msi_install_btn")).clicked()
+                                    && let UpdateDialog::UpdateAvailable { latest_version } = dialog.clone()
+                                {
+                                    self.pending_update_dialog = None;
+                                    let (tx, rx) = mpsc::channel::<crate::updater::MsiDownloadEvent>();
+                                    std::thread::spawn(move || {
+                                        let result = updater::download_msi(&latest_version, tx.clone());
+                                        let _ = tx.send(crate::updater::MsiDownloadEvent::Done(result));
+                                    });
+                                    self.msi_download_worker = Some(super::MsiDownloadWorker { rx });
+                                }
+                            } else {
+                                if ui.button(self.tr("update_download_restart_btn")).clicked()
+                                    && let UpdateDialog::UpdateAvailable { latest_version } = dialog.clone()
+                                {
+                                    self.pending_update_dialog = None;
+                                    if let Err(e) = updater::download_and_install(&latest_version) {
+                                        self.pending_update_dialog =
+                                            Some(UpdateDialog::Error { message: e });
+                                    }
+                                }
                             }
-                        }
-                        if matches!(dialog, UpdateDialog::UpdateAvailable { .. })
-                            && ui.button(self.tr("update_check_again")).clicked()
-                        {
-                            self.pending_update_dialog = None;
-                            self.start_update_check(true);
+                            if ui.button(self.tr("update_check_again")).clicked() {
+                                self.pending_update_dialog = None;
+                                self.start_update_check(true);
+                            }
                         }
                     });
                 });
