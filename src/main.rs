@@ -61,6 +61,7 @@ impl Default for AppSettings {
 pub enum Language {
     English,
     German,
+    Chinese,
 }
 
 pub fn save_app_settings(settings: &AppSettings) {
@@ -198,9 +199,9 @@ fn show_unsupported_windows_message() {
     let title: Vec<u16> = "Winchisel".encode_utf16().chain(std::iter::once(0)).collect();
     let text: Vec<u16> =
         "Winchisel requires Windows 11 24H2 or newer. Older Windows versions are not supported."
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
 
     unsafe {
         let _ = MessageBoxW(
