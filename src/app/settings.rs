@@ -50,6 +50,7 @@ impl WinchiselApp {
                             .selected_text(match current_language {
                                 crate::Language::English => "English",
                                 crate::Language::German => "Deutsch",
+                                crate::Language::Chinese => "简体中文",
                             })
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(
@@ -61,6 +62,11 @@ impl WinchiselApp {
                                     &mut self.state.settings.language,
                                     crate::Language::German,
                                     "Deutsch",
+                                );
+                                ui.selectable_value(
+                                    &mut self.state.settings.language,
+                                    crate::Language::Chinese,
+                                    "简体中文",
                                 );
                             });
                     });
