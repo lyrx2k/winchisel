@@ -1,3 +1,7 @@
+> # v1.0.0 is available here https://github.com/lejyfps/winchisel
+
+
+
 # Winchisel
 
 Winchisel is a fast, native Windows tweaking app built in Rust with `egui`/`eframe`.
