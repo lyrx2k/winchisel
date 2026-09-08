@@ -1,5 +1,5 @@
-> # v1.0.0 is available here https://github.com/lejyfps/winchisel
-
+> [!CAUTION]
+> v1.0.0 is available here https://github.com/lejyfps/winchisel
 
 
 # Winchisel
@@ -7,13 +7,6 @@
 Winchisel is a fast, native Windows tweaking app built in Rust with `egui`/`eframe`.
 It focuses on practical system tweaks, cleaner defaults, and a compact UI for quickly
 changing Windows settings without digging through multiple control panels.
-
-## Download
-[![Summarize new issues](https://github.com/lyrx2k/winchisel/actions/workflows/summary.yml/badge.svg?event=issues)](https://github.com/lyrx2k/winchisel/actions/workflows/summary.yml)
-
-**Get the latest release here:**
-
-[![Download Winchisel](https://img.shields.io/badge/Download-Latest%20Release-brightgreen?style=for-the-badge&logo=windows)](https://github.com/lyrx2k/winchisel/releases/latest)
 
 ## Features
 
@@ -65,11 +58,6 @@ Winchisel stores its settings in:
 ```text
 %APPDATA%\Winchisel\settings.json
 ```
-
-Available app settings:
-
-- `check_updates_on_startup`
-- `show_console`
 
 ## Project Structure
 
